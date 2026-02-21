@@ -1,0 +1,9 @@
+# Local environment files
+.env
+.env.local
+
+# MacOS
+.DS_Store
+
+# Go build
+bin/
