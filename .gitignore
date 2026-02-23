@@ -7,3 +7,6 @@
 
 # Go build
 bin/
+
+# test images
+test*.jpg
