@@ -1,0 +1,580 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SafeBites API",
+    "description": "Backend API for SafeBites – scan food product labels, analyse ingredients, manage user preferences, scan history, and favourites.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "http://localhost:8080", "description": "Local development" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Firebase / Google ID token passed as Bearer in Authorization header."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string", "example": "user not found" }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id":               { "type": "string", "example": "uid_abc123" },
+          "email":            { "type": "string", "format": "email", "example": "alice@example.com" },
+          "name":             { "type": "string", "example": "Alice" },
+          "picture":          { "type": "string", "format": "uri" },
+          "allergies":        { "type": "array", "items": { "type": "string" }, "example": ["peanuts"] },
+          "dietGoals":        { "type": "array", "items": { "type": "string" }, "example": ["low-sugar"] },
+          "avoidIngredients": { "type": "array", "items": { "type": "string" }, "example": ["msg"] },
+          "createdAt":        { "type": "string", "format": "date-time" },
+          "updatedAt":        { "type": "string", "format": "date-time" }
+        }
+      },
+      "UserPreferences": {
+        "type": "object",
+        "properties": {
+          "allergies":        { "type": "array", "items": { "type": "string" } },
+          "dietGoals":        { "type": "array", "items": { "type": "string" } },
+          "avoidIngredients": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "UpsertUserRequest": {
+        "type": "object",
+        "required": ["id", "email"],
+        "properties": {
+          "id":               { "type": "string", "example": "uid_abc123" },
+          "email":            { "type": "string", "format": "email", "example": "alice@example.com" },
+          "name":             { "type": "string" },
+          "picture":          { "type": "string", "format": "uri" },
+          "allergies":        { "type": "array", "items": { "type": "string" } },
+          "dietGoals":        { "type": "array", "items": { "type": "string" } },
+          "avoidIngredients": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "Scan": {
+        "type": "object",
+        "properties": {
+          "id":          { "type": "string", "format": "uuid" },
+          "userId":      { "type": "string" },
+          "productName": { "type": "string", "example": "Oreo Cookies" },
+          "brand":       { "type": "string", "example": "Nabisco" },
+          "image":       { "type": "string", "description": "Base-64 encoded image or URL" },
+          "safetyScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "isSafe":      { "type": "boolean" },
+          "ingredients": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          },
+          "timestamp":   { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateScanRequest": {
+        "type": "object",
+        "required": ["productName"],
+        "properties": {
+          "id":          { "type": "string", "format": "uuid", "description": "Optional; auto-generated if omitted" },
+          "productName": { "type": "string", "example": "Oreo Cookies" },
+          "brand":       { "type": "string" },
+          "image":       { "type": "string" },
+          "safetyScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "isSafe":      { "type": "boolean" },
+          "ingredients": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          }
+        }
+      },
+      "UserStats": {
+        "type": "object",
+        "properties": {
+          "totalScans":   { "type": "integer" },
+          "todayScans":   { "type": "integer" },
+          "safeToday":    { "type": "integer" },
+          "riskyToday":   { "type": "integer" },
+          "averageScore": { "type": "number", "format": "double" }
+        }
+      },
+      "Favorite": {
+        "type": "object",
+        "properties": {
+          "id":          { "type": "integer" },
+          "userId":      { "type": "string" },
+          "productName": { "type": "string" },
+          "brand":       { "type": "string" },
+          "safetyScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "image":       { "type": "string" },
+          "addedAt":     { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateFavoriteRequest": {
+        "type": "object",
+        "required": ["productName"],
+        "properties": {
+          "productName": { "type": "string", "example": "Oreo Cookies" },
+          "brand":       { "type": "string" },
+          "safetyScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "image":       { "type": "string" }
+        }
+      },
+      "DietaryTemplate": {
+        "type": "object",
+        "properties": {
+          "key":              { "type": "string" },
+          "name":             { "type": "string" },
+          "allergies":        { "type": "array", "items": { "type": "string" } },
+          "dietGoals":        { "type": "array", "items": { "type": "string" } },
+          "avoidIngredients": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "AnalyzeResponse": {
+        "type": "object",
+        "properties": {
+          "productName": { "type": "string" },
+          "result": { "type": "object", "additionalProperties": true, "description": "Full analysis workflow result" }
+        }
+      },
+      "RecommendResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "success" },
+          "reccomender_data": { "type": "object", "additionalProperties": true }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "operationId": "healthCheck",
+        "responses": {
+          "200": { "description": "Service is healthy" }
+        }
+      }
+    },
+    "/api/analyze": {
+      "post": {
+        "tags": ["Analysis"],
+        "summary": "Analyse a product image",
+        "description": "Upload a food product label image. The AI pipeline extracts ingredients, scores safety, and optionally personalises results based on the authenticated user's preferences.",
+        "operationId": "analyzeImage",
+        "security": [{"BearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["image"],
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Product image file (max 10 MB). Supported types: JPEG, PNG, WEBP."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Analysis result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AnalyzeResponse" }
+              }
+            }
+          },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "413": { "description": "Image too large" },
+          "500": { "description": "Internal error" }
+        }
+      }
+    },
+    "/api/reccomendations/{product_name}/{overall_score}": {
+      "get": {
+        "tags": ["Recommendations"],
+        "summary": "Get alternative product recommendations",
+        "description": "Given a scanned product name and its safety score, returns AI-generated healthier alternatives.",
+        "operationId": "recommendProducts",
+        "parameters": [
+          {
+            "name": "product_name",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "example": "Oreo Cookies"
+          },
+          {
+            "name": "overall_score",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "number", "format": "double" },
+            "example": 42.5
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recommendation result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RecommendResponse" }
+              }
+            }
+          },
+          "400": { "description": "Bad request" },
+          "500": { "description": "Internal error" }
+        }
+      }
+    },
+    "/api/users/me": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get current authenticated user",
+        "operationId": "getMe",
+        "security": [{"BearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "user": { "$ref": "#/components/schemas/User" } }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "User not found" }
+        }
+      }
+    },
+    "/api/users/{user_id}": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get user by ID",
+        "operationId": "getUserByID",
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "user": { "$ref": "#/components/schemas/User" } }
+                }
+              }
+            }
+          },
+          "404": { "description": "User not found" }
+        }
+      }
+    },
+    "/api/users": {
+      "post": {
+        "tags": ["Users"],
+        "summary": "Create or update a user (upsert)",
+        "description": "Creates the user if they do not exist, otherwise updates their profile.",
+        "operationId": "upsertUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpsertUserRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created or updated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "user": { "$ref": "#/components/schemas/User" } }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation error" }
+        }
+      }
+    },
+    "/api/users/{user_id}/preferences": {
+      "post": {
+        "tags": ["Users"],
+        "summary": "Update user dietary preferences",
+        "operationId": "updatePreferences",
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UserPreferences" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "user": { "$ref": "#/components/schemas/User" } }
+                }
+              }
+            }
+          },
+          "404": { "description": "User not found" }
+        }
+      }
+    },
+    "/api/dietary-templates": {
+      "get": {
+        "tags": ["Templates"],
+        "summary": "List all dietary templates",
+        "operationId": "listDietaryTemplates",
+        "responses": {
+          "200": {
+            "description": "Array of templates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "templates": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/DietaryTemplate" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{user_id}/apply-template/{template_key}": {
+      "post": {
+        "tags": ["Templates"],
+        "summary": "Apply a dietary template to a user",
+        "description": "Copies the template's allergies, dietGoals, and avoidIngredients into the user's preferences.",
+        "operationId": "applyTemplate",
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "template_key", "in": "path", "required": true, "schema": { "type": "string" }, "example": "vegan" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated user and applied template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user":     { "$ref": "#/components/schemas/User" },
+                    "template": { "$ref": "#/components/schemas/DietaryTemplate" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "User or template not found" }
+        }
+      }
+    },
+    "/api/users/{user_id}/scans": {
+      "get": {
+        "tags": ["Scans"],
+        "summary": "List scans for a user",
+        "operationId": "listScans",
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "default": 20, "maximum": 100 }, "description": "Max number of results" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of scans",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scans": { "type": "array", "items": { "$ref": "#/components/schemas/Scan" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Scans"],
+        "summary": "Save a scan for a user",
+        "operationId": "createScan",
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateScanRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved scan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "scan": { "$ref": "#/components/schemas/Scan" } }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation error" }
+        }
+      }
+    },
+    "/api/users/{user_id}/stats": {
+      "get": {
+        "tags": ["Scans"],
+        "summary": "Get scan statistics for a user",
+        "operationId": "getScanStats",
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scan stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "stats": { "$ref": "#/components/schemas/UserStats" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{user_id}/favorites": {
+      "get": {
+        "tags": ["Favourites"],
+        "summary": "List favourites for a user",
+        "operationId": "listFavorites",
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of favourites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "favorites": { "type": "array", "items": { "$ref": "#/components/schemas/Favorite" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Favourites"],
+        "summary": "Add a product to favourites",
+        "operationId": "createFavorite",
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateFavoriteRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created favourite",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "favorite": { "$ref": "#/components/schemas/Favorite" },
+                    "status":   { "type": "string", "example": "created" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation error" }
+        }
+      }
+    },
+    "/api/users/{user_id}/favorites/{favorite_id}": {
+      "delete": {
+        "tags": ["Favourites"],
+        "summary": "Remove a favourite",
+        "operationId": "deleteFavorite",
+        "parameters": [
+          { "name": "user_id",     "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "favorite_id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Deleted", "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string", "example": "deleted" } } } } } },
+          "404": { "description": "Favourite not found" }
+        }
+      }
+    },
+    "/api/users/{user_id}/favorites/check/{product_name}": {
+      "get": {
+        "tags": ["Favourites"],
+        "summary": "Check if a product is in user's favourites",
+        "operationId": "checkFavorite",
+        "parameters": [
+          { "name": "user_id",      "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "product_name", "in": "path", "required": true, "schema": { "type": "string" }, "example": "Oreo Cookies" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Favourite status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "isFavorite": { "type": "boolean" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
