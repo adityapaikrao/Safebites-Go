@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/safebites/backend-go/internal/model"
@@ -23,9 +23,14 @@ type createFavoriteRequest struct {
 
 func (h *FavoriteHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "user_id")
+	if strings.TrimSpace(userID) == "" {
+		writeError(w, http.StatusBadRequest, "missing user_id")
+		return
+	}
+
 	favorites, err := h.Favorites.ListByUser(r.Context(), userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to fetch favorites")
+		writeInternalError(w, r, "failed to fetch favorites", err)
 		return
 	}
 
@@ -34,14 +39,21 @@ func (h *FavoriteHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *FavoriteHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "user_id")
-
-	var req createFavoriteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if strings.TrimSpace(userID) == "" {
+		writeError(w, http.StatusBadRequest, "missing user_id")
 		return
 	}
-	if req.ProductName == "" {
+
+	var req createFavoriteRequest
+	if ok := readJSON(w, r, &req); !ok {
+		return
+	}
+	if strings.TrimSpace(req.ProductName) == "" {
 		writeError(w, http.StatusBadRequest, "productName is required")
+		return
+	}
+	if req.SafetyScore != nil && (*req.SafetyScore < 0 || *req.SafetyScore > 100) {
+		writeError(w, http.StatusBadRequest, "safetyScore must be between 0 and 100")
 		return
 	}
 
@@ -53,7 +65,7 @@ func (h *FavoriteHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Image:       req.Image,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to add favorite")
+		writeInternalError(w, r, "failed to add favorite", err)
 		return
 	}
 
@@ -65,10 +77,19 @@ func (h *FavoriteHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *FavoriteHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "user_id")
+	if strings.TrimSpace(userID) == "" {
+		writeError(w, http.StatusBadRequest, "missing user_id")
+		return
+	}
+
 	favoriteIDRaw := chi.URLParam(r, "favorite_id")
 	favoriteID, err := strconv.Atoi(favoriteIDRaw)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "favorite_id must be numeric")
+		return
+	}
+	if favoriteID <= 0 {
+		writeError(w, http.StatusBadRequest, "favorite_id must be positive")
 		return
 	}
 
@@ -78,7 +99,7 @@ func (h *FavoriteHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "favorite not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to delete favorite")
+		writeInternalError(w, r, "failed to delete favorite", err)
 		return
 	}
 
@@ -88,10 +109,18 @@ func (h *FavoriteHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *FavoriteHandler) Check(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "user_id")
 	productName := chi.URLParam(r, "product_name")
+	if strings.TrimSpace(userID) == "" {
+		writeError(w, http.StatusBadRequest, "missing user_id")
+		return
+	}
+	if strings.TrimSpace(productName) == "" {
+		writeError(w, http.StatusBadRequest, "missing product_name")
+		return
+	}
 
 	exists, err := h.Favorites.Exists(r.Context(), userID, productName)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to check favorite")
+		writeInternalError(w, r, "failed to check favorite", err)
 		return
 	}
 

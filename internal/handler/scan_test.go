@@ -80,3 +80,48 @@ func TestScanHandlerCreate(t *testing.T) {
 	h.Create(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code)
 }
+
+func TestScanHandlerListByUserInvalidLimit(t *testing.T) {
+	h := &ScanHandler{Scans: &mockScanRepo{
+		listByUser: func(_ context.Context, _ string, _ int) ([]model.Scan, error) {
+			t.Fatal("listByUser should not be called for invalid limit")
+			return nil, nil
+		},
+		create:   nil,
+		getStats: nil,
+	}, Users: &mockUserRepo{}}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users/user-1/scans?limit=-1", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("user_id", "user-1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rr := httptest.NewRecorder()
+
+	h.ListByUser(rr, req)
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestScanHandlerCreateInvalidSafetyScore(t *testing.T) {
+	h := &ScanHandler{Scans: &mockScanRepo{
+		listByUser: nil,
+		create: func(_ context.Context, _ *model.Scan) (*model.Scan, error) {
+			t.Fatal("create should not be called for invalid safetyScore")
+			return nil, nil
+		},
+		getStats: nil,
+	}, Users: &mockUserRepo{}}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"productName": "Granola Bar",
+		"safetyScore": 101,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/users/user-1/scans", bytes.NewBuffer(body))
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("user_id", "user-1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rr := httptest.NewRecorder()
+
+	h.Create(rr, req)
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+}

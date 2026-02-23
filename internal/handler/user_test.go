@@ -95,3 +95,43 @@ func TestUserHandlerUpdatePreferencesNotFound(t *testing.T) {
 	h.UpdatePreferences(rr, req)
 	require.Equal(t, http.StatusNotFound, rr.Code)
 }
+
+func TestUserHandlerUpsertUnknownField(t *testing.T) {
+	h := &UserHandler{Users: &mockUserRepo{
+		getByID: nil,
+		upsert: func(_ context.Context, _ *model.User) (*model.User, error) {
+			t.Fatal("upsert should not be called for unknown field")
+			return nil, nil
+		},
+		updatePreferences: nil,
+	}}
+
+	body := []byte(`{"id":"user-1","email":"user@example.com","unknown":"value"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/users", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	h.Upsert(rr, req)
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestUserHandlerUpsertInvalidEmail(t *testing.T) {
+	h := &UserHandler{Users: &mockUserRepo{
+		getByID: nil,
+		upsert: func(_ context.Context, _ *model.User) (*model.User, error) {
+			t.Fatal("upsert should not be called for invalid email")
+			return nil, nil
+		},
+		updatePreferences: nil,
+	}}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":    "user-1",
+		"email": "not-an-email",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/users", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+
+	h.Upsert(rr, req)
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+}

@@ -1,8 +1,9 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
+	"net/mail"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/safebites/backend-go/internal/middleware"
@@ -37,7 +38,7 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to fetch user")
+		writeInternalError(w, r, "failed to fetch user", err)
 		return
 	}
 
@@ -57,7 +58,7 @@ func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to fetch user")
+		writeInternalError(w, r, "failed to fetch user", err)
 		return
 	}
 
@@ -66,13 +67,17 @@ func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 
 func (h *UserHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 	var req createUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if ok := readJSON(w, r, &req); !ok {
 		return
 	}
 
-	if req.ID == "" || req.Email == "" {
+	if strings.TrimSpace(req.ID) == "" || strings.TrimSpace(req.Email) == "" {
 		writeError(w, http.StatusBadRequest, "id and email are required")
+		return
+	}
+
+	if _, err := mail.ParseAddress(req.Email); err != nil {
+		writeError(w, http.StatusBadRequest, "email is invalid")
 		return
 	}
 
@@ -86,7 +91,7 @@ func (h *UserHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 		AvoidIngredients: req.AvoidIngredients,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to upsert user")
+		writeInternalError(w, r, "failed to upsert user", err)
 		return
 	}
 
@@ -101,8 +106,7 @@ func (h *UserHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var preferences model.UserPreferences
-	if err := json.NewDecoder(r.Body).Decode(&preferences); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if ok := readJSON(w, r, &preferences); !ok {
 		return
 	}
 
@@ -112,7 +116,7 @@ func (h *UserHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to update preferences")
+		writeInternalError(w, r, "failed to update preferences", err)
 		return
 	}
 

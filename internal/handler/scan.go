@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -28,17 +28,27 @@ type createScanRequest struct {
 
 func (h *ScanHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "user_id")
+	if strings.TrimSpace(userID) == "" {
+		writeError(w, http.StatusBadRequest, "missing user_id")
+		return
+	}
+
 	limit := 20
 	if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
-		if err == nil && parsed > 0 {
-			limit = parsed
+		if err != nil || parsed <= 0 {
+			writeError(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
 		}
+		if parsed > 100 {
+			parsed = 100
+		}
+		limit = parsed
 	}
 
 	scans, err := h.Scans.ListByUser(r.Context(), userID, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to fetch scans")
+		writeInternalError(w, r, "failed to fetch scans", err)
 		return
 	}
 
@@ -47,14 +57,21 @@ func (h *ScanHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *ScanHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "user_id")
-
-	var req createScanRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if strings.TrimSpace(userID) == "" {
+		writeError(w, http.StatusBadRequest, "missing user_id")
 		return
 	}
-	if req.ProductName == "" {
+
+	var req createScanRequest
+	if ok := readJSON(w, r, &req); !ok {
+		return
+	}
+	if strings.TrimSpace(req.ProductName) == "" {
 		writeError(w, http.StatusBadRequest, "productName is required")
+		return
+	}
+	if req.SafetyScore < 0 || req.SafetyScore > 100 {
+		writeError(w, http.StatusBadRequest, "safetyScore must be between 0 and 100")
 		return
 	}
 
@@ -74,7 +91,7 @@ func (h *ScanHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Ingredients: req.Ingredients,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create scan")
+		writeInternalError(w, r, "failed to create scan", err)
 		return
 	}
 
@@ -86,6 +103,10 @@ func (h *ScanHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *ScanHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "user_id")
+	if strings.TrimSpace(userID) == "" {
+		writeError(w, http.StatusBadRequest, "missing user_id")
+		return
+	}
 
 	_, err := h.Users.GetByID(r.Context(), userID)
 	if err != nil {
@@ -93,13 +114,13 @@ func (h *ScanHandler) Stats(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to fetch user")
+		writeInternalError(w, r, "failed to fetch user", err)
 		return
 	}
 
 	stats, err := h.Scans.GetStats(r.Context(), userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to fetch stats")
+		writeInternalError(w, r, "failed to fetch stats", err)
 		return
 	}
 
