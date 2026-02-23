@@ -53,6 +53,10 @@ func (v *VisionOCR) ExtractProductName(ctx context.Context, imageBytes []byte, m
 		mimeType = "image/jpeg"
 	}
 
+	if !isSupportedVisionMimeType(mimeType) {
+		return "", fmt.Errorf("unsupported image mime type: %s", mimeType)
+	}
+
 	resp, err := v.client.GenerateContent(ctx, v.model, []*genai.Content{
 		genai.NewContentFromParts([]*genai.Part{
 			genai.NewPartFromBytes(imageBytes, mimeType),
@@ -63,9 +67,18 @@ func (v *VisionOCR) ExtractProductName(ctx context.Context, imageBytes []byte, m
 		return "", err
 	}
 
-	if resp == nil || resp.Text() == "" {
+	if resp == nil || strings.TrimSpace(resp.Text()) == "" {
 		return "", fmt.Errorf("vision response is empty")
 	}
 
 	return strings.TrimSpace(resp.Text()), nil
+}
+
+func isSupportedVisionMimeType(mimeType string) bool {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif":
+		return true
+	default:
+		return false
+	}
 }

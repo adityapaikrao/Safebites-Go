@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"google.golang.org/genai"
 
@@ -15,6 +17,8 @@ import (
 )
 
 const defaultGeminiModel = "gemini-2.0-flash"
+
+var runIDCounter uint64
 
 func NewGeminiModel(ctx context.Context, apiKey string, modelName string) (model.LLM, error) {
 	if strings.TrimSpace(apiKey) == "" {
@@ -37,8 +41,9 @@ func runAgentOnce(ctx context.Context, appName string, agnt agent.Agent, input s
 		return "", fmt.Errorf("create adk runner: %w", err)
 	}
 
-	const userID = "safebites-agent"
-	const sessionID = "safebites-session"
+	runID := fmt.Sprintf("%d-%d", time.Now().UnixNano(), atomic.AddUint64(&runIDCounter, 1))
+	userID := "safebites-agent-" + runID
+	sessionID := "safebites-session-" + runID
 	_, err = sessionService.Create(ctx, &session.CreateRequest{
 		AppName:   appName,
 		UserID:    userID,
@@ -68,4 +73,27 @@ func runAgentOnce(ctx context.Context, appName string, agnt agent.Agent, input s
 	}
 
 	return strings.TrimSpace(out), nil
+}
+
+func stripJSONCodeFences(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.HasPrefix(trimmed, "```") {
+		return trimmed
+	}
+
+	trimmed = strings.TrimPrefix(trimmed, "```")
+	trimmed = strings.TrimSpace(trimmed)
+
+	if idx := strings.IndexByte(trimmed, '\n'); idx >= 0 {
+		firstLine := strings.TrimSpace(trimmed[:idx])
+		if firstLine == "json" || firstLine == "JSON" {
+			trimmed = strings.TrimSpace(trimmed[idx+1:])
+		}
+	}
+
+	if strings.HasSuffix(trimmed, "```") {
+		trimmed = strings.TrimSuffix(trimmed, "```")
+	}
+
+	return strings.TrimSpace(trimmed)
 }

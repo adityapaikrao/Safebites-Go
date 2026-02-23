@@ -70,6 +70,8 @@ func (a *ScorerAgent) scoreFromPayload(ctx context.Context, agnt agent.Agent, pa
 		return nil, err
 	}
 
+	raw = stripJSONCodeFences(raw)
+
 	var out sbmodel.ScorerResult
 	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &out); err != nil {
 		return nil, fmt.Errorf("parse scorer result: %w", err)
