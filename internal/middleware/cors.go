@@ -8,13 +8,8 @@ import (
 )
 
 func CORS(cfg *config.Config) func(http.Handler) http.Handler {
-	allowedOrigins := cfg.CORSOrigins
-	if len(allowedOrigins) == 0 {
-		allowedOrigins = []string{"http://localhost:3000"}
-	}
-
 	return cors.Handler(cors.Options{
-		AllowedOrigins:   allowedOrigins,
+		AllowedOrigins:   cfg.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		ExposedHeaders:   []string{"Link"},
