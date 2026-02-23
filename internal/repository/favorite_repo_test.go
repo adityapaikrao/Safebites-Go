@@ -90,3 +90,49 @@ func TestFavoriteRepoExistsTrue(t *testing.T) {
 	require.True(t, exists)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestFavoriteRepoListByUserNullSafetyScore(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	require.NoError(t, err)
+	defer mock.Close()
+
+	now := time.Now().UTC()
+	rows := pgxmock.NewRows([]string{"id", "user_id", "product_name", "brand", "safety_score", "image", "added_at"}).
+		AddRow(1, "user-1", "Granola Bar", "Brand A", nil, "", now)
+
+	mock.ExpectQuery("SELECT id, user_id").WithArgs("user-1").WillReturnRows(rows)
+
+	repo := &favoriteRepo{q: mock}
+	favorites, err := repo.ListByUser(context.Background(), "user-1")
+	require.NoError(t, err)
+	require.Len(t, favorites, 1)
+	require.Nil(t, favorites[0].SafetyScore)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestFavoriteRepoDeleteSuccess(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	require.NoError(t, err)
+	defer mock.Close()
+
+	mock.ExpectExec("DELETE FROM favorites").WithArgs("user-1", 1).WillReturnResult(pgxmock.NewResult("DELETE", 1))
+
+	repo := &favoriteRepo{q: mock}
+	err = repo.Delete(context.Background(), "user-1", 1)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestFavoriteRepoExistsError(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	require.NoError(t, err)
+	defer mock.Close()
+
+	mock.ExpectQuery("SELECT EXISTS").WithArgs("user-1", "Granola Bar").WillReturnError(errors.New("db failure"))
+
+	repo := &favoriteRepo{q: mock}
+	_, err = repo.Exists(context.Background(), "user-1", "Granola Bar")
+	require.Error(t, err)
+	require.ErrorContains(t, err, "check favorite exists")
+	require.NoError(t, mock.ExpectationsWereMet())
+}

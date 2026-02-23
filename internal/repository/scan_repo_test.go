@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -80,5 +81,37 @@ func TestScanRepoGetStatsSuccess(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 10, stats.TotalScans)
 	require.Equal(t, 81.2, stats.AverageScore)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestScanRepoListByUserDefaultLimit(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	require.NoError(t, err)
+	defer mock.Close()
+
+	now := time.Now().UTC()
+	rows := pgxmock.NewRows([]string{"id", "user_id", "product_name", "brand", "image", "safety_score", "is_safe", "ingredients", "timestamp"}).
+		AddRow("scan-1", "user-1", "Granola Bar", "Brand A", "", 78, true, []byte(`[{"name":"oats"}]`), now)
+
+	mock.ExpectQuery("SELECT id, user_id").WithArgs("user-1", 20).WillReturnRows(rows)
+
+	repo := &scanRepo{q: mock}
+	scans, err := repo.ListByUser(context.Background(), "user-1", 0)
+	require.NoError(t, err)
+	require.Len(t, scans, 1)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestScanRepoGetStatsError(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	require.NoError(t, err)
+	defer mock.Close()
+
+	mock.ExpectQuery("SELECT").WithArgs("user-1").WillReturnError(errors.New("db failure"))
+
+	repo := &scanRepo{q: mock}
+	_, err = repo.GetStats(context.Background(), "user-1")
+	require.Error(t, err)
+	require.ErrorContains(t, err, "get user scan stats")
 	require.NoError(t, mock.ExpectationsWereMet())
 }

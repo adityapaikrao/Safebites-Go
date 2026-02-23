@@ -86,9 +86,6 @@ func (r *userRepo) Upsert(ctx context.Context, user *model.User) (*model.User, e
 			email = EXCLUDED.email,
 			name = EXCLUDED.name,
 			picture = EXCLUDED.picture,
-			allergies = EXCLUDED.allergies,
-			diet_goals = EXCLUDED.diet_goals,
-			avoid_ingredients = EXCLUDED.avoid_ingredients,
 			updated_at = NOW()
 		RETURNING id, email, COALESCE(name, ''), COALESCE(picture, ''), allergies, diet_goals, avoid_ingredients, created_at, updated_at`
 

@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -129,9 +128,6 @@ func (r *favoriteRepo) Exists(ctx context.Context, userID, productName string) (
 	var exists bool
 	err := r.q.QueryRow(ctx, query, userID, productName).Scan(&exists)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
 		return false, fmt.Errorf("check favorite exists: %w", err)
 	}
 

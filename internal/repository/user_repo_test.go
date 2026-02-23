@@ -104,3 +104,44 @@ func TestUserRepoUpdatePreferencesSuccess(t *testing.T) {
 	require.Equal(t, []string{"keto"}, updated.DietGoals)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestUserRepoUpdatePreferencesNotFound(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	require.NoError(t, err)
+	defer mock.Close()
+
+	mock.ExpectQuery("UPDATE users").WithArgs(
+		"missing",
+		pgxmock.AnyArg(),
+		pgxmock.AnyArg(),
+		pgxmock.AnyArg(),
+	).WillReturnError(pgx.ErrNoRows)
+
+	repo := &userRepo{q: mock}
+	_, err = repo.UpdatePreferences(context.Background(), "missing", model.UserPreferences{})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrNotFound))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUserRepoUpsertDBError(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	require.NoError(t, err)
+	defer mock.Close()
+
+	mock.ExpectQuery("INSERT INTO users").WithArgs(
+		"user-1",
+		"user@example.com",
+		"",
+		"",
+		pgxmock.AnyArg(),
+		pgxmock.AnyArg(),
+		pgxmock.AnyArg(),
+	).WillReturnError(errors.New("db failure"))
+
+	repo := &userRepo{q: mock}
+	_, err = repo.Upsert(context.Background(), &model.User{ID: "user-1", Email: "user@example.com"})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "upsert user")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
