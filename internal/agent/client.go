@@ -16,7 +16,7 @@ import (
 	"google.golang.org/adk/session"
 )
 
-const defaultGeminiModel = "gemini-2.0-flash"
+const defaultGeminiModel = "gemini-2.5-flash"
 
 var runIDCounter uint64
 
