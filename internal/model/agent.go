@@ -1,5 +1,31 @@
 package model
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
+// FlexibleString accepts both JSON strings and numbers, converting numbers to
+// their string representation. This is useful when an LLM may return either
+// form despite being instructed to return a string.
+type FlexibleString string
+
+func (f *FlexibleString) UnmarshalJSON(data []byte) error {
+	// Try string first.
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*f = FlexibleString(s)
+		return nil
+	}
+	// Fall back to number.
+	var n json.Number
+	if err := json.Unmarshal(data, &n); err == nil {
+		*f = FlexibleString(n.String())
+		return nil
+	}
+	return fmt.Errorf("flexibleString: cannot unmarshal %s", string(data))
+}
+
 type Ingredient struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -10,9 +36,9 @@ type WebSearchResult struct {
 }
 
 type IngredientScore struct {
-	IngredientName string `json:"ingredient_name"`
-	SafetyScore    string `json:"safety_score"`
-	Reasoning      string `json:"reasoning"`
+	IngredientName string         `json:"ingredient_name"`
+	SafetyScore    FlexibleString `json:"safety_score"`
+	Reasoning      string         `json:"reasoning"`
 }
 
 type ScorerResult struct {
@@ -21,9 +47,9 @@ type ScorerResult struct {
 }
 
 type Recommendation struct {
-	ProductName string `json:"product_name"`
-	HealthScore string `json:"health_score"`
-	Reason      string `json:"reason"`
+	ProductName string         `json:"product_name"`
+	HealthScore FlexibleString `json:"health_score"`
+	Reason      string         `json:"reason"`
 }
 
 type RecommenderResult struct {

@@ -22,17 +22,23 @@ Output strict JSON that matches schema:
 	scorerAgentInstructions = `You are a STRICT but FAIR scoring agent that evaluates ingredient and product safety.
 
 Tasks:
-1) Assign safety_score of LOW, MEDIUM, HIGH.
+1) Assign safety_score — MUST be one of the strings "LOW", "MEDIUM", or "HIGH" (never a number).
 2) Respect user preferences with priority:
-   - Allergies: match -> LOW
-   - Avoid ingredients: match -> LOW
-   - Diet goals violations: MEDIUM or LOW
+   - Allergies: match -> "LOW"
+   - Avoid ingredients: match -> "LOW"
+   - Diet goals violations: "MEDIUM" or "LOW"
 3) Provide concise reasoning for each scored item.
-4) Compute overall_score between 0 and 10.
+4) Compute overall_score as a number between 0 and 10.
 
-Output strict JSON object with fields:
-- ingredient_scores: [{ingredient_name, safety_score, reasoning}]
-- overall_score: number`
+Output ONLY a strict JSON object — no markdown, no commentary. Example:
+{
+  "ingredient_scores": [
+    {"ingredient_name": "Sugar", "safety_score": "LOW", "reasoning": "High added sugar content"}
+  ],
+  "overall_score": 3.5
+}
+
+IMPORTANT: safety_score values MUST be strings ("LOW", "MEDIUM", or "HIGH"), never numbers.`
 
 	recommenderAgentInstructions = `You are a recommendation agent that suggests healthier alternative food products.
 
@@ -42,14 +48,25 @@ Given a product name and score:
 3) Each recommendation should be plausibly healthier than the original.
 4) Keep reason concise and factual.
 
-Output strict JSON:
+Output ONLY a strict JSON object — no markdown, no commentary. Example:
 {
   "recommendations": [
-    {"product_name": "...", "health_score": "HIGH", "reason": "..."}
+    {"product_name": "Organic Oats", "health_score": "HIGH", "reason": "Minimal processing, no additives"}
   ]
-}`
+}
+
+IMPORTANT: health_score values MUST be strings ("LOW", "MEDIUM", or "HIGH"), never numbers.`
 
 	recommendationEvalSystemPrompt = `You are a strict evaluator of recommended alternative products.
 Evaluate each recommended product and output a safety score and reasoning for each.
-Return strict JSON with ingredient_scores and overall_score.`
+
+Output ONLY a strict JSON object — no markdown, no commentary. Example:
+{
+  "ingredient_scores": [
+    {"ingredient_name": "Product A", "safety_score": "HIGH", "reasoning": "Clean ingredient profile"}
+  ],
+  "overall_score": 8.0
+}
+
+IMPORTANT: safety_score values MUST be strings ("LOW", "MEDIUM", or "HIGH"), never numbers.`
 )

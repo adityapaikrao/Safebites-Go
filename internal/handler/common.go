@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const maxJSONBodyBytes int64 = 1 << 20
+const maxJSONBodyBytes int64 = 10 << 20
 
 func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -19,7 +19,20 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
+	log.Printf("handler client error status=%d message=%q", status, message)
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func writeRequestError(w http.ResponseWriter, r *http.Request, status int, message string) {
+	log.Printf(
+		"handler client error method=%s path=%s status=%d content_length=%d message=%q",
+		r.Method,
+		r.URL.Path,
+		status,
+		r.ContentLength,
+		message,
+	)
+	writeError(w, status, message)
 }
 
 func writeInternalError(w http.ResponseWriter, r *http.Request, message string, err error) {
@@ -31,7 +44,7 @@ func readJSON(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
 	if ct := strings.TrimSpace(r.Header.Get("Content-Type")); ct != "" {
 		mediaType, _, err := mime.ParseMediaType(ct)
 		if err != nil || mediaType != "application/json" {
-			writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+			writeRequestError(w, r, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
 			return false
 		}
 	}
@@ -49,23 +62,23 @@ func readJSON(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
 
 		switch {
 		case errors.As(err, &syntaxErr):
-			writeError(w, http.StatusBadRequest, "request body contains malformed JSON")
+			writeRequestError(w, r, http.StatusBadRequest, "request body contains malformed JSON")
 		case errors.Is(err, io.EOF):
-			writeError(w, http.StatusBadRequest, "request body must not be empty")
+			writeRequestError(w, r, http.StatusBadRequest, "request body must not be empty")
 		case errors.As(err, &typeErr):
-			writeError(w, http.StatusBadRequest, "request body contains invalid value type")
+			writeRequestError(w, r, http.StatusBadRequest, "request body contains invalid value type")
 		case strings.HasPrefix(err.Error(), "json: unknown field "):
-			writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), "json: "))
+			writeRequestError(w, r, http.StatusBadRequest, strings.TrimPrefix(err.Error(), "json: "))
 		case errors.As(err, &maxBytesErr):
-			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			writeRequestError(w, r, http.StatusRequestEntityTooLarge, "request body too large")
 		default:
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeRequestError(w, r, http.StatusBadRequest, "invalid JSON body")
 		}
 		return false
 	}
 
 	if err := dec.Decode(&struct{}{}); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "request body must contain only one JSON object")
+		writeRequestError(w, r, http.StatusBadRequest, "request body must contain only one JSON object")
 		return false
 	}
 

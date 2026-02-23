@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"log"
 
 	"google.golang.org/genai"
 
@@ -84,6 +85,8 @@ func (o *Orchestrator) AnalyzeAndImprove(ctx context.Context, productName string
 		return nil, fmt.Errorf("orchestrator requires searcher, scorer, and recommender")
 	}
 
+	log.Printf("workflow analyze start product=%q min_score=%.2f max_turns=%d has_prefs=%t", productName, o.cfg.MinAcceptableScore, o.cfg.MaxRecommendationTx, prefs != nil)
+
 	var (
 		searchRes    *sbmodel.WebSearchResult
 		initialScore *sbmodel.ScorerResult
@@ -94,12 +97,15 @@ func (o *Orchestrator) AnalyzeAndImprove(ctx context.Context, productName string
 		Description: "Searches product ingredients.",
 		Run: func(ic agent.InvocationContext) iter.Seq2[*session.Event, error] {
 			return func(yield func(*session.Event, error) bool) {
+				log.Printf("workflow step start step=search product=%q", productName)
 				result, searchErr := o.searcher.Search(ic, productName)
 				if searchErr != nil {
+					log.Printf("workflow step failed step=search product=%q err=%v", productName, searchErr)
 					yield(nil, searchErr)
 					return
 				}
 				searchRes = result
+				log.Printf("workflow step complete step=search product=%q ingredients=%d", productName, len(searchRes.ListOfIngredients))
 				yield(&session.Event{LLMResponse: adkmodel.LLMResponse{Content: genai.NewContentFromText("search_complete", genai.RoleModel)}}, nil)
 			}
 		},
@@ -117,12 +123,15 @@ func (o *Orchestrator) AnalyzeAndImprove(ctx context.Context, productName string
 					yield(nil, fmt.Errorf("search step did not produce results"))
 					return
 				}
+				log.Printf("workflow step start step=score ingredients=%d", len(searchRes.ListOfIngredients))
 				result, scoreErr := o.scorer.ScoreIngredients(ic, searchRes.ListOfIngredients, prefs)
 				if scoreErr != nil {
+					log.Printf("workflow step failed step=score err=%v", scoreErr)
 					yield(nil, scoreErr)
 					return
 				}
 				initialScore = result
+				log.Printf("workflow step complete step=score overall_score=%.2f", initialScore.OverallScore)
 				yield(&session.Event{LLMResponse: adkmodel.LLMResponse{Content: genai.NewContentFromText("score_complete", genai.RoleModel)}}, nil)
 			}
 		},
@@ -143,6 +152,7 @@ func (o *Orchestrator) AnalyzeAndImprove(ctx context.Context, productName string
 
 	_, err = runAgentOnce(ctx, "safebites-analysis-workflow", sequential, productName)
 	if err != nil {
+		log.Printf("workflow analyze failed stage=initial_workflow err=%v", err)
 		return nil, err
 	}
 
@@ -158,6 +168,7 @@ func (o *Orchestrator) AnalyzeAndImprove(ctx context.Context, productName string
 	}
 
 	if initialScore.OverallScore >= o.cfg.MinAcceptableScore {
+		log.Printf("workflow analyze complete status=accepted_without_recommendation final_score=%.2f", initialScore.OverallScore)
 		return result, nil
 	}
 
@@ -172,12 +183,15 @@ func (o *Orchestrator) AnalyzeAndImprove(ctx context.Context, productName string
 		Description: "Recommends alternative products.",
 		Run: func(ic agent.InvocationContext) iter.Seq2[*session.Event, error] {
 			return func(yield func(*session.Event, error) bool) {
+				log.Printf("workflow step start step=recommend product=%q current_score=%.2f", productName, currentScore)
 				result, recErr := o.recommender.Recommend(ic, productName, currentScore)
 				if recErr != nil {
+					log.Printf("workflow step failed step=recommend err=%v", recErr)
 					yield(nil, recErr)
 					return
 				}
 				latestRec = result
+				log.Printf("workflow step complete step=recommend recommendations=%d", len(latestRec.Recommendations))
 				yield(&session.Event{LLMResponse: adkmodel.LLMResponse{Content: genai.NewContentFromText("recommend_complete", genai.RoleModel)}}, nil)
 			}
 		},
@@ -195,8 +209,10 @@ func (o *Orchestrator) AnalyzeAndImprove(ctx context.Context, productName string
 					yield(nil, fmt.Errorf("recommend step did not produce recommendations"))
 					return
 				}
+				log.Printf("workflow step start step=rescore recommendations=%d", len(latestRec.Recommendations))
 				scoreResult, scoreErr := o.scorer.ScoreRecommendations(ic, latestRec.Recommendations, prefs)
 				if scoreErr != nil {
+					log.Printf("workflow step failed step=rescore err=%v", scoreErr)
 					yield(nil, scoreErr)
 					return
 				}
@@ -205,10 +221,12 @@ func (o *Orchestrator) AnalyzeAndImprove(ctx context.Context, productName string
 				result.Turns = append(result.Turns, LoopTurn{Recommendations: *latestRec, Score: *latestScore})
 				result.FinalScore = *latestScore
 				currentScore = latestScore.OverallScore
+				log.Printf("workflow step complete step=rescore turn=%d overall_score=%.2f threshold=%.2f", len(result.Turns), latestScore.OverallScore, o.cfg.MinAcceptableScore)
 
 				event := &session.Event{LLMResponse: adkmodel.LLMResponse{Content: genai.NewContentFromText("rescore_complete", genai.RoleModel)}}
 				if latestScore.OverallScore >= o.cfg.MinAcceptableScore {
 					event.Actions.Escalate = true
+					log.Printf("workflow loop early_stop=true reason=threshold_reached score=%.2f", latestScore.OverallScore)
 				}
 				yield(event, nil)
 			}
@@ -231,8 +249,11 @@ func (o *Orchestrator) AnalyzeAndImprove(ctx context.Context, productName string
 
 	_, err = runAgentOnce(ctx, "safebites-loop-workflow", loopWorkflow, productName)
 	if err != nil {
+		log.Printf("workflow analyze failed stage=loop_workflow err=%v", err)
 		return nil, err
 	}
+
+	log.Printf("workflow analyze complete status=finished_with_recommendations turns=%d final_score=%.2f", len(result.Turns), result.FinalScore.OverallScore)
 
 	return result, nil
 }

@@ -26,6 +26,7 @@ import (
 func buildRouter(cfg *config.Config, db *repository.DB) (*chi.Mux, error) {
 	r := chi.NewRouter()
 
+	r.Use(chiMiddleware.RequestID)
 	r.Use(middleware.Logging)
 	r.Use(chiMiddleware.Recoverer)
 	r.Use(middleware.CORS(cfg))
@@ -70,6 +71,10 @@ func buildRouter(cfg *config.Config, db *repository.DB) (*chi.Mux, error) {
 	recommendHandler := &handler.RecommendHandler{Recommend: recommendService}
 
 	r.Get("/", handler.Health)
+
+	// Swagger / OpenAPI docs
+	r.Get("/docs", handler.SwaggerUI)
+	r.Get("/docs/openapi.json", handler.OpenAPISpec)
 
 	r.Route("/api", func(api chi.Router) {
 		api.Post("/analyze", analyzeHandler.AnalyzeImage)
