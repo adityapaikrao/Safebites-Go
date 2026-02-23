@@ -91,8 +91,8 @@ func stripJSONCodeFences(raw string) string {
 		}
 	}
 
-	if strings.HasSuffix(trimmed, "```") {
-		trimmed = strings.TrimSuffix(trimmed, "```")
+	if before, ok := strings.CutSuffix(trimmed, "```"); ok {
+		trimmed = before
 	}
 
 	return strings.TrimSpace(trimmed)
