@@ -29,7 +29,10 @@ func main() {
 	}
 	defer db.Close()
 
-	r := buildRouter(cfg, db)
+	r, err := buildRouter(cfg, db)
+	if err != nil {
+		log.Fatalf("router init failed: %v", err)
+	}
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
 		Handler:      r,
