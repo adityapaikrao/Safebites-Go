@@ -78,6 +78,90 @@ func NewOrchestratorFromModel(llm adkmodel.LLM, cfg WorkflowConfig) (*Orchestrat
 	return NewOrchestrator(searcher, scorer, recommender, cfg), nil
 }
 
+// AnalyzeOnly executes the search + score steps and returns immediately.
+// The recommendation loop is intentionally omitted; callers trigger it separately.
+func (o *Orchestrator) AnalyzeOnly(ctx context.Context, productName string, prefs *sbmodel.UserPreferences) (*sbmodel.WebSearchResult, *sbmodel.ScorerResult, error) {
+	if o.searcher == nil || o.scorer == nil {
+		return nil, nil, fmt.Errorf("orchestrator requires searcher and scorer")
+	}
+
+	log.Printf("analyze_only start product=%q has_prefs=%t", productName, prefs != nil)
+
+	var (
+		searchRes    *sbmodel.WebSearchResult
+		initialScore *sbmodel.ScorerResult
+	)
+
+	searchStep, err := agent.New(agent.Config{
+		Name:        "search_step",
+		Description: "Searches product ingredients.",
+		Run: func(ic agent.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				log.Printf("analyze_only step=search product=%q", productName)
+				result, searchErr := o.searcher.Search(ic, productName)
+				if searchErr != nil {
+					yield(nil, searchErr)
+					return
+				}
+				searchRes = result
+				log.Printf("analyze_only step=search complete ingredients=%d", len(searchRes.ListOfIngredients))
+				yield(&session.Event{LLMResponse: adkmodel.LLMResponse{Content: genai.NewContentFromText("search_complete", genai.RoleModel)}}, nil)
+			}
+		},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("create adk search step: %w", err)
+	}
+
+	scoreStep, err := agent.New(agent.Config{
+		Name:        "score_step",
+		Description: "Scores product ingredients.",
+		Run: func(ic agent.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				if searchRes == nil {
+					yield(nil, fmt.Errorf("search step did not produce results"))
+					return
+				}
+				log.Printf("analyze_only step=score ingredients=%d", len(searchRes.ListOfIngredients))
+				result, scoreErr := o.scorer.ScoreIngredients(ic, searchRes.ListOfIngredients, prefs)
+				if scoreErr != nil {
+					yield(nil, scoreErr)
+					return
+				}
+				initialScore = result
+				log.Printf("analyze_only step=score complete overall_score=%.2f", initialScore.OverallScore)
+				yield(&session.Event{LLMResponse: adkmodel.LLMResponse{Content: genai.NewContentFromText("score_complete", genai.RoleModel)}}, nil)
+			}
+		},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("create adk score step: %w", err)
+	}
+
+	sequential, err := sequentialagent.New(sequentialagent.Config{
+		AgentConfig: agent.Config{
+			Name:      "analysis_sequence",
+			SubAgents: []agent.Agent{searchStep, scoreStep},
+		},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("create adk sequential workflow: %w", err)
+	}
+
+	_, err = runAgentOnce(ctx, "safebites-analysis-only", sequential, productName)
+	if err != nil {
+		log.Printf("analyze_only failed err=%v", err)
+		return nil, nil, err
+	}
+
+	if searchRes == nil || initialScore == nil {
+		return nil, nil, fmt.Errorf("analysis workflow did not produce search and score results")
+	}
+
+	log.Printf("analyze_only complete product=%q overall_score=%.2f", productName, initialScore.OverallScore)
+	return searchRes, initialScore, nil
+}
+
 // AnalyzeAndImprove executes:
 // OCR (outside this orchestrator) -> search -> scorer -> (recommender -> scorer) loop up to max turns.
 func (o *Orchestrator) AnalyzeAndImprove(ctx context.Context, productName string, prefs *sbmodel.UserPreferences) (*WorkflowResult, error) {

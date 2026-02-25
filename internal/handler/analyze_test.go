@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/safebites/backend-go/internal/agent"
 	"github.com/safebites/backend-go/internal/config"
 	"github.com/safebites/backend-go/internal/middleware"
 	"github.com/safebites/backend-go/internal/model"
@@ -19,10 +18,10 @@ import (
 )
 
 type mockAnalyzeService struct {
-	analyze func(ctx context.Context, imageBytes []byte, mimeType string, prefs *model.UserPreferences) (string, *agent.WorkflowResult, error)
+	analyze func(ctx context.Context, imageBytes []byte, mimeType string, prefs *model.UserPreferences) (string, *model.ScorerResult, error)
 }
 
-func (m *mockAnalyzeService) Analyze(ctx context.Context, imageBytes []byte, mimeType string, prefs *model.UserPreferences) (string, *agent.WorkflowResult, error) {
+func (m *mockAnalyzeService) Analyze(ctx context.Context, imageBytes []byte, mimeType string, prefs *model.UserPreferences) (string, *model.ScorerResult, error) {
 	return m.analyze(ctx, imageBytes, mimeType, prefs)
 }
 
@@ -82,11 +81,11 @@ func makeAnalyzeMultipartRequest(t *testing.T, withImage bool) *http.Request {
 func TestAnalyzeHandlerAnalyzeImageSuccessWithoutUser(t *testing.T) {
 	h := &AnalyzeHandler{
 		Analyze: &mockAnalyzeService{
-			analyze: func(_ context.Context, imageBytes []byte, mimeType string, prefs *model.UserPreferences) (string, *agent.WorkflowResult, error) {
+			analyze: func(_ context.Context, imageBytes []byte, mimeType string, prefs *model.UserPreferences) (string, *model.ScorerResult, error) {
 				require.NotEmpty(t, imageBytes)
 				require.NotEmpty(t, mimeType)
 				require.Nil(t, prefs)
-				return "Product A", &agent.WorkflowResult{FinalScore: model.ScorerResult{OverallScore: 7.8}}, nil
+				return "Product A", &model.ScorerResult{OverallScore: 7.8}, nil
 			},
 		},
 	}
@@ -108,10 +107,10 @@ func TestAnalyzeHandlerAnalyzeImageSuccessWithUserPreferences(t *testing.T) {
 
 	h := &AnalyzeHandler{
 		Analyze: &mockAnalyzeService{
-			analyze: func(_ context.Context, _ []byte, _ string, prefs *model.UserPreferences) (string, *agent.WorkflowResult, error) {
+			analyze: func(_ context.Context, _ []byte, _ string, prefs *model.UserPreferences) (string, *model.ScorerResult, error) {
 				require.NotNil(t, prefs)
 				require.Equal(t, []string{"vegan"}, prefs.DietGoals)
-				return "Product B", &agent.WorkflowResult{FinalScore: model.ScorerResult{OverallScore: 6.5}}, nil
+				return "Product B", &model.ScorerResult{OverallScore: 6.5}, nil
 			},
 		},
 		Users: &mockAnalyzeUserService{
@@ -133,7 +132,7 @@ func TestAnalyzeHandlerAnalyzeImageSuccessWithUserPreferences(t *testing.T) {
 func TestAnalyzeHandlerAnalyzeImageMissingImage(t *testing.T) {
 	h := &AnalyzeHandler{
 		Analyze: &mockAnalyzeService{
-			analyze: func(_ context.Context, _ []byte, _ string, _ *model.UserPreferences) (string, *agent.WorkflowResult, error) {
+			analyze: func(_ context.Context, _ []byte, _ string, _ *model.UserPreferences) (string, *model.ScorerResult, error) {
 				t.Fatal("analyze should not be called")
 				return "", nil, nil
 			},
@@ -151,7 +150,7 @@ func TestAnalyzeHandlerAnalyzeImageMissingImage(t *testing.T) {
 func TestAnalyzeHandlerAnalyzeImageServiceError(t *testing.T) {
 	h := &AnalyzeHandler{
 		Analyze: &mockAnalyzeService{
-			analyze: func(_ context.Context, _ []byte, _ string, _ *model.UserPreferences) (string, *agent.WorkflowResult, error) {
+			analyze: func(_ context.Context, _ []byte, _ string, _ *model.UserPreferences) (string, *model.ScorerResult, error) {
 				return "", nil, errors.New("analyze failed")
 			},
 		},
@@ -167,7 +166,7 @@ func TestAnalyzeHandlerAnalyzeImageServiceError(t *testing.T) {
 func TestAnalyzeHandlerAnalyzeImageUserServiceError(t *testing.T) {
 	h := &AnalyzeHandler{
 		Analyze: &mockAnalyzeService{
-			analyze: func(_ context.Context, _ []byte, _ string, _ *model.UserPreferences) (string, *agent.WorkflowResult, error) {
+			analyze: func(_ context.Context, _ []byte, _ string, _ *model.UserPreferences) (string, *model.ScorerResult, error) {
 				t.Fatal("analyze should not be called when user lookup fails")
 				return "", nil, nil
 			},
@@ -193,9 +192,9 @@ func TestAnalyzeHandlerAnalyzeImageUserServiceError(t *testing.T) {
 func TestAnalyzeHandlerAnalyzeImageUserNotFoundStillAnalyzes(t *testing.T) {
 	h := &AnalyzeHandler{
 		Analyze: &mockAnalyzeService{
-			analyze: func(_ context.Context, _ []byte, _ string, prefs *model.UserPreferences) (string, *agent.WorkflowResult, error) {
+			analyze: func(_ context.Context, _ []byte, _ string, prefs *model.UserPreferences) (string, *model.ScorerResult, error) {
 				require.Nil(t, prefs)
-				return "Product C", &agent.WorkflowResult{FinalScore: model.ScorerResult{OverallScore: 5.1}}, nil
+				return "Product C", &model.ScorerResult{OverallScore: 5.1}, nil
 			},
 		},
 		Users: &mockAnalyzeUserService{

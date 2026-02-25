@@ -134,18 +134,58 @@
           "avoidIngredients": { "type": "array", "items": { "type": "string" } }
         }
       },
+      "IngredientScore": {
+        "type": "object",
+        "description": "Safety score and reasoning for a single ingredient.",
+        "properties": {
+          "ingredient_name": { "type": "string", "example": "Enriched Flour" },
+          "safety_score":    { "type": "string", "example": "6", "description": "Score 1–10 as a string; the AI may return a number which is coerced to string." },
+          "reasoning":       { "type": "string", "example": "Contains refined carbohydrates with limited nutritional value." }
+        }
+      },
+      "ScorerResult": {
+        "type": "object",
+        "description": "Aggregate safety score for a set of ingredients.",
+        "properties": {
+          "ingredient_scores": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/IngredientScore" }
+          },
+          "overall_score": { "type": "number", "format": "double", "example": 6.2, "description": "Weighted average safety score (0–10)." }
+        }
+      },
       "AnalyzeResponse": {
         "type": "object",
+        "description": "Result of scanning and scoring the original product. Does not include alternative recommendations.",
         "properties": {
-          "productName": { "type": "string" },
-          "result": { "type": "object", "additionalProperties": true, "description": "Full analysis workflow result" }
+          "status":               { "type": "string", "example": "success" },
+          "product_name":         { "type": "string", "example": "Ritz Crackers" },
+          "ingredient_breakdown": { "$ref": "#/components/schemas/ScorerResult" }
+        }
+      },
+      "Recommendation": {
+        "type": "object",
+        "description": "A single alternative product suggested by the recommender.",
+        "properties": {
+          "product_name":  { "type": "string", "example": "Quinoa Crackers" },
+          "health_score":  { "type": "string", "example": "9", "description": "Estimated health score 1–10." },
+          "reason":        { "type": "string", "example": "Made with whole food ingredients; naturally gluten-free." }
         }
       },
       "RecommendResponse": {
         "type": "object",
+        "description": "Healthier alternative products returned when the user explicitly requests recommendations.",
         "properties": {
           "status": { "type": "string", "example": "success" },
-          "reccomender_data": { "type": "object", "additionalProperties": true }
+          "reccomender_data": {
+            "type": "object",
+            "properties": {
+              "recommendations": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/Recommendation" }
+              }
+            }
+          }
         }
       }
     }
@@ -165,7 +205,7 @@
       "post": {
         "tags": ["Analysis"],
         "summary": "Analyse a product image",
-        "description": "Upload a food product label image. The AI pipeline extracts ingredients, scores safety, and optionally personalises results based on the authenticated user's preferences.",
+        "description": "Upload a food product label image. The AI pipeline extracts the product name, searches for ingredients, and scores each ingredient for safety. Returns `ingredient_breakdown` for the original scanned product only — alternative recommendations are fetched separately via the Recommendations endpoint.",
         "operationId": "analyzeImage",
         "security": [{"BearerAuth": []}],
         "requestBody": {
@@ -188,7 +228,7 @@
         },
         "responses": {
           "200": {
-            "description": "Analysis result",
+            "description": "Ingredient breakdown for the scanned product.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/AnalyzeResponse" }
@@ -205,7 +245,7 @@
       "get": {
         "tags": ["Recommendations"],
         "summary": "Get alternative product recommendations",
-        "description": "Given a scanned product name and its safety score, returns AI-generated healthier alternatives.",
+        "description": "On-demand endpoint — call this when the user taps 'Find Alternatives'. Given the original product name and its overall safety score, returns AI-generated healthier alternatives. Not triggered automatically by /api/analyze.",
         "operationId": "recommendProducts",
         "parameters": [
           {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/safebites/backend-go/internal/agent"
 	"github.com/safebites/backend-go/internal/model"
 	"github.com/stretchr/testify/require"
 )
@@ -19,11 +18,11 @@ func (m *mockVisionExtractor) ExtractProductName(ctx context.Context, imageBytes
 }
 
 type mockAnalyzeWorkflow struct {
-	analyzeAndImprove func(ctx context.Context, productName string, prefs *model.UserPreferences) (*agent.WorkflowResult, error)
+	analyzeOnly func(ctx context.Context, productName string, prefs *model.UserPreferences) (*model.WebSearchResult, *model.ScorerResult, error)
 }
 
-func (m *mockAnalyzeWorkflow) AnalyzeAndImprove(ctx context.Context, productName string, prefs *model.UserPreferences) (*agent.WorkflowResult, error) {
-	return m.analyzeAndImprove(ctx, productName, prefs)
+func (m *mockAnalyzeWorkflow) AnalyzeOnly(ctx context.Context, productName string, prefs *model.UserPreferences) (*model.WebSearchResult, *model.ScorerResult, error) {
+	return m.analyzeOnly(ctx, productName, prefs)
 }
 
 func TestAnalyzeServiceAnalyzeSuccess(t *testing.T) {
@@ -36,10 +35,10 @@ func TestAnalyzeServiceAnalyzeSuccess(t *testing.T) {
 			},
 		},
 		&mockAnalyzeWorkflow{
-			analyzeAndImprove: func(_ context.Context, productName string, prefs *model.UserPreferences) (*agent.WorkflowResult, error) {
+			analyzeOnly: func(_ context.Context, productName string, prefs *model.UserPreferences) (*model.WebSearchResult, *model.ScorerResult, error) {
 				require.Equal(t, "Product A", productName)
 				require.Equal(t, []string{"vegan"}, prefs.DietGoals)
-				return &agent.WorkflowResult{FinalScore: model.ScorerResult{OverallScore: 8.2}}, nil
+				return nil, &model.ScorerResult{OverallScore: 8.2}, nil
 			},
 		},
 	)
@@ -48,7 +47,7 @@ func TestAnalyzeServiceAnalyzeSuccess(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Product A", name)
 	require.NotNil(t, result)
-	require.Equal(t, 8.2, result.FinalScore.OverallScore)
+	require.Equal(t, 8.2, result.OverallScore)
 }
 
 func TestAnalyzeServiceAnalyzeDefaultsMimeType(t *testing.T) {
@@ -60,8 +59,8 @@ func TestAnalyzeServiceAnalyzeDefaultsMimeType(t *testing.T) {
 			},
 		},
 		&mockAnalyzeWorkflow{
-			analyzeAndImprove: func(_ context.Context, _ string, _ *model.UserPreferences) (*agent.WorkflowResult, error) {
-				return &agent.WorkflowResult{FinalScore: model.ScorerResult{OverallScore: 5.0}}, nil
+			analyzeOnly: func(_ context.Context, _ string, _ *model.UserPreferences) (*model.WebSearchResult, *model.ScorerResult, error) {
+				return nil, &model.ScorerResult{OverallScore: 5.0}, nil
 			},
 		},
 	)
@@ -79,9 +78,9 @@ func TestAnalyzeServiceAnalyzeVisionError(t *testing.T) {
 			},
 		},
 		&mockAnalyzeWorkflow{
-			analyzeAndImprove: func(_ context.Context, _ string, _ *model.UserPreferences) (*agent.WorkflowResult, error) {
+			analyzeOnly: func(_ context.Context, _ string, _ *model.UserPreferences) (*model.WebSearchResult, *model.ScorerResult, error) {
 				t.Fatal("workflow should not be called")
-				return nil, nil
+				return nil, nil, nil
 			},
 		},
 	)
@@ -101,8 +100,8 @@ func TestAnalyzeServiceAnalyzeWorkflowError(t *testing.T) {
 			},
 		},
 		&mockAnalyzeWorkflow{
-			analyzeAndImprove: func(_ context.Context, _ string, _ *model.UserPreferences) (*agent.WorkflowResult, error) {
-				return nil, workflowErr
+			analyzeOnly: func(_ context.Context, _ string, _ *model.UserPreferences) (*model.WebSearchResult, *model.ScorerResult, error) {
+				return nil, nil, workflowErr
 			},
 		},
 	)
@@ -140,9 +139,9 @@ func TestAnalyzeServiceAnalyzeValidation(t *testing.T) {
 			},
 		},
 		&mockAnalyzeWorkflow{
-			analyzeAndImprove: func(_ context.Context, _ string, _ *model.UserPreferences) (*agent.WorkflowResult, error) {
+			analyzeOnly: func(_ context.Context, _ string, _ *model.UserPreferences) (*model.WebSearchResult, *model.ScorerResult, error) {
 				t.Fatal("workflow should not be called")
-				return nil, nil
+				return nil, nil, nil
 			},
 		},
 	)

@@ -72,15 +72,15 @@ func (h *AnalyzeHandler) AnalyzeImage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	productName, workflowResult, err := h.Analyze.Analyze(r.Context(), imageBytes, mimeType, prefs)
+	productName, scorerResult, err := h.Analyze.Analyze(r.Context(), imageBytes, mimeType, prefs)
 	if err != nil {
 		writeInternalError(w, r, "failed to analyze product", err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":       "success",
-		"product_name": productName,
-		"scoring_data": workflowResult.FinalScore,
+		"status":               "success",
+		"product_name":         productName,
+		"ingredient_breakdown": scorerResult,
 	})
 }

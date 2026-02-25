@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/safebites/backend-go/internal/agent"
 	"github.com/safebites/backend-go/internal/model"
 )
 
@@ -14,7 +13,7 @@ type productNameExtractor interface {
 }
 
 type analyzeWorkflow interface {
-	AnalyzeAndImprove(ctx context.Context, productName string, prefs *model.UserPreferences) (*agent.WorkflowResult, error)
+	AnalyzeOnly(ctx context.Context, productName string, prefs *model.UserPreferences) (*model.WebSearchResult, *model.ScorerResult, error)
 }
 
 type analyzeService struct {
@@ -29,7 +28,7 @@ func NewAnalyzeService(vision productNameExtractor, orchestrator analyzeWorkflow
 	}
 }
 
-func (s *analyzeService) Analyze(ctx context.Context, imageBytes []byte, mimeType string, prefs *model.UserPreferences) (string, *agent.WorkflowResult, error) {
+func (s *analyzeService) Analyze(ctx context.Context, imageBytes []byte, mimeType string, prefs *model.UserPreferences) (string, *model.ScorerResult, error) {
 	if s.vision == nil {
 		return "", nil, fmt.Errorf("vision dependency is required")
 	}
@@ -51,13 +50,13 @@ func (s *analyzeService) Analyze(ctx context.Context, imageBytes []byte, mimeTyp
 		return "", nil, fmt.Errorf("product name extraction returned empty value")
 	}
 
-	result, err := s.orchestrator.AnalyzeAndImprove(ctx, strings.TrimSpace(productName), prefs)
+	_, score, err := s.orchestrator.AnalyzeOnly(ctx, strings.TrimSpace(productName), prefs)
 	if err != nil {
 		return "", nil, fmt.Errorf("run analyze workflow: %w", err)
 	}
-	if result == nil {
+	if score == nil {
 		return "", nil, fmt.Errorf("analyze workflow returned empty result")
 	}
 
-	return strings.TrimSpace(productName), result, nil
+	return strings.TrimSpace(productName), score, nil
 }

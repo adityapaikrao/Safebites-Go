@@ -3,12 +3,11 @@ package service
 import (
 	"context"
 
-	"github.com/safebites/backend-go/internal/agent"
 	"github.com/safebites/backend-go/internal/model"
 )
 
 type AnalyzeService interface {
-	Analyze(ctx context.Context, imageBytes []byte, mimeType string, prefs *model.UserPreferences) (string, *agent.WorkflowResult, error)
+	Analyze(ctx context.Context, imageBytes []byte, mimeType string, prefs *model.UserPreferences) (string, *model.ScorerResult, error)
 }
 
 type RecommendService interface {
