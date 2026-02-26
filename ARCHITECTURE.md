@@ -1,737 +1,433 @@
-# SafeBites Go Backend — Architecture & Implementation Plan
+# SafeBites Go Backend — Architecture
 
 ## Table of Contents
 
-1. [Overview](#overview)
+1. [System Overview](#system-overview)
 2. [Architecture Diagram](#architecture-diagram)
-3. [Current vs New: Side-by-Side](#current-vs-new-side-by-side)
-4. [Tech Stack](#tech-stack)
-5. [Project Structure](#project-structure)
-6. [Database Schema](#database-schema)
-7. [API Contract (1:1 with Python backend)](#api-contract)
-8. [Agent Architecture (Google ADK + Gemini)](#agent-architecture)
-9. [Authentication Flow](#authentication-flow)
-10. [Configuration](#configuration)
-11. [Implementation Phases](#implementation-phases)
-12. [Testing Strategy](#testing-strategy)
-13. [Running Locally](#running-locally)
+3. [Layer-by-Layer Breakdown](#layer-by-layer-breakdown)
+4. [AI Agent Pipeline](#ai-agent-pipeline)
+5. [Database Design](#database-design)
+6. [Design Decisions](#design-decisions)
+7. [Go Patterns Used](#go-patterns-used)
+8. [Python-to-Go Migration](#python-to-go-migration)
+9. [Testing Strategy](#testing-strategy)
+10. [Future Additions](#future-additions)
 
 ---
 
-## Overview
+## System Overview
 
-Rewrite the SafeBites Python/FastAPI backend in **Go** using:
+SafeBites is a four-layer Go backend that orchestrates a multi-agent AI pipeline for food product safety analysis. A user uploads a product photo, and the system chains four AI agents — Vision OCR, Web Search, Ingredient Scorer, and Recommender — to return a personalized safety assessment and healthier alternatives.
 
-- **Google ADK (Agent Development Kit) for Go** — agent orchestration with Gemini models
-- **Gemini 2.0 Flash** — vision (product name extraction) + agent LLM backbone
-- **PostgreSQL** — persistent storage via `pgx/v5`
-- **chi router** — lightweight, idiomatic HTTP routing
-- **Auth0 JWT** — same auth flow as current backend
-
-The frontend (`backendApi.ts`) remains **unchanged** — all API routes, request/response shapes, and status codes are preserved 1:1.
+The backend exposes 18 REST endpoints, persists user data and scan history in PostgreSQL, and authenticates via Auth0 JWTs. The AI pipeline is built on top of Google's Agent Development Kit (ADK) for Go, using Gemini 2.5 Flash as the backbone model with Google Search grounding for real-time ingredient lookups.
 
 ---
 
 ## Architecture Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Frontend (Next.js)                       │
-│                    backendApi.ts (unchanged)                     │
-└─────────────────────┬───────────────────────────────────────────┘
-                      │  HTTP (JSON / multipart)
-                      ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     API Gateway (chi router)                    │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌──────────────┐  │
-│  │  CORS    │→ │  Logger  │→ │  Auth/JWT  │→ │   Handlers   │  │
-│  │Middleware│  │Middleware │  │ Middleware │  │              │  │
-│  └──────────┘  └──────────┘  └───────────┘  └──────┬───────┘  │
-└─────────────────────────────────────────────────────┼──────────┘
-                                                      │
-                      ┌───────────────────────────────┼──────────┐
-                      │                               ▼          │
-                      │  ┌─────────────────────────────────────┐ │
-                      │  │         Service Layer               │ │
-                      │  │  (business logic, orchestration)    │ │
-                      │  └────────┬──────────────┬─────────────┘ │
-                      │           │              │               │
-                      │           ▼              ▼               │
-                      │  ┌──────────────┐  ┌──────────────────┐ │
-                      │  │  Repository  │  │  Agent Layer     │ │
-                      │  │  (pgx/v5)    │  │  (Google ADK)    │ │
-                      │  │              │  │                  │ │
-                      │  │ • UserRepo   │  │ • Vision         │ │
-                      │  │ • ScanRepo   │  │   (Gemini Flash) │ │
-                      │  │ • FavRepo    │  │ • SearchAgent    │ │
-                      │  │              │  │   (Gemini+GSearch)│ │
-                      │  └──────┬───────┘  │ • ScorerAgent    │ │
-                      │         │          │   (Gemini)       │ │
-                      │         ▼          │ • RecommendAgent │ │
-                      │  ┌──────────────┐  │   (Gemini+GSearch)│ │
-                      │  │  PostgreSQL   │  └──────────────────┘ │
-                      │  │  (pgx pool)   │                       │
-                      │  └──────────────┘                        │
-                      │                  Internal                 │
-                      └──────────────────────────────────────────┘
-```
-
----
-
-## Current vs New: Side-by-Side
-
-| Concern              | Python Backend                        | Go Backend                                |
-|----------------------|---------------------------------------|-------------------------------------------|
-| Framework            | FastAPI                               | chi router (stdlib `net/http` compatible) |
-| Language             | Python 3.11+                          | Go 1.22+                                  |
-| Database driver      | SQLAlchemy ORM                        | pgx/v5 (raw SQL, no ORM)                 |
-| Database             | SQLite (dev) / PostgreSQL (prod)      | PostgreSQL always (Docker for local)      |
-| AI SDK               | OpenAI Agents SDK                     | Google ADK for Go                         |
-| LLM models           | GPT-4.1-mini, GPT-5-mini             | Gemini 2.0 Flash (all agents)            |
-| Image → product name | Gemini 2.0 Flash (google-genai)       | Gemini 2.0 Flash (genai Go SDK)          |
-| Web search           | OpenAI WebSearchTool                  | Gemini Google Search grounding            |
-| Auth                 | python-jose (JWT)                     | golang-jwt/jwt/v5                         |
-| Config               | pydantic + dotenv                     | env vars + `.env` file                    |
-| Testing              | pytest                                | go test + testify + pgxmock               |
-| Migrations           | SQLAlchemy auto-create                | golang-migrate (versioned SQL files)      |
-
----
-
-## Tech Stack
-
-| Library                              | Purpose                                | Version  |
-|--------------------------------------|----------------------------------------|----------|
-| `github.com/go-chi/chi/v5`          | HTTP router & middleware               | v5       |
-| `github.com/go-chi/cors`            | CORS middleware                        | latest   |
-| `github.com/jackc/pgx/v5`           | PostgreSQL driver & connection pool    | v5       |
-| `github.com/golang-jwt/jwt/v5`      | JWT parsing & validation               | v5       |
-| `github.com/google/genai`           | Google Gen AI SDK (Gemini calls)       | latest   |
-| `github.com/joho/godotenv`          | Load `.env` file                       | latest   |
-| `github.com/golang-migrate/migrate/v4` | Database migrations                 | v4       |
-| `github.com/stretchr/testify`       | Test assertions & mocks                | latest   |
-| `github.com/pashagolub/pgxmock/v4`  | pgx mock for repository tests          | v4       |
-
-> **Note on Google ADK for Go**: If `github.com/google/adk-go` is stable at implementation time, we use it for agent orchestration. Otherwise, we implement a lightweight agent abstraction over the `github.com/google/genai` SDK directly (same Gemini models, Google Search grounding, structured output via JSON schema). Either way, the agent layer is isolated behind interfaces and swappable.
-
----
-
-## Project Structure
+### Full System Architecture
 
 ```
-backend-go/
-├── cmd/
-│   └── server/
-│       └── main.go                  # Entry point: config → DB → agents → router → serve
-│
-├── internal/
-│   ├── config/
-│   │   └── config.go                # Env-based configuration struct
-│   │
-│   ├── middleware/
-│   │   ├── auth.go                  # Auth0 JWT verification (+ dev bypass)
-│   │   ├── cors.go                  # CORS settings
-│   │   └── logging.go               # Request/response logging
-│   │
-│   ├── handler/
-│   │   ├── analyze.go               # POST /api/analyze
-│   │   ├── recommend.go             # GET  /api/reccomendations/:name/:score
-│   │   ├── user.go                  # GET/POST /api/users, /api/users/:id, /me
-│   │   ├── preference.go            # POST /api/users/:id/preferences
-│   │   ├── scan.go                  # GET/POST /api/users/:id/scans, stats
-│   │   ├── favorite.go              # GET/POST/DELETE /api/users/:id/favorites
-│   │   ├── template.go              # GET /api/dietary-templates, POST apply-template
-│   │   └── health.go                # GET /
-│   │
-│   ├── model/
-│   │   ├── user.go                  # User, UserPreferences structs
-│   │   ├── scan.go                  # Scan struct
-│   │   ├── favorite.go              # Favorite struct
-│   │   ├── template.go              # DietaryTemplate definitions (static data)
-│   │   └── agent.go                 # WebSearchResult, ScorerResult, RecommenderResult
-│   │
-│   ├── repository/
-│   │   ├── interfaces.go            # UserRepository, ScanRepository, FavoriteRepository interfaces
-│   │   ├── postgres.go              # NewPostgresDB, pool management
-│   │   ├── user_repo.go             # UserRepository implementation
-│   │   ├── scan_repo.go             # ScanRepository implementation
-│   │   └── favorite_repo.go         # FavoriteRepository implementation
-│   │
-│   ├── service/
-│   │   ├── analyze_service.go       # Orchestrates vision → search → scorer pipeline
-│   │   ├── recommend_service.go     # Orchestrates recommender agent
-│   │   ├── user_service.go          # User CRUD + preference logic
-│   │   └── scan_service.go          # Scan + stats logic
-│   │
-│   └── agent/
-│       ├── client.go                # Gemini client initialization
-│       ├── vision.go                # ExtractProductName (Gemini Vision)
-│       ├── search.go                # WebSearchAgent (Gemini + Google Search grounding)
-│       ├── scorer.go                # ScorerAgent (Gemini structured output)
-│       ├── recommender.go           # RecommenderAgent (Gemini + Google Search)
-│       └── prompts.go               # All system prompts (ported from Python)
-│
-├── migrations/
-│   ├── 001_create_users.up.sql
-│   ├── 001_create_users.down.sql
-│   ├── 002_create_scans.up.sql
-│   ├── 002_create_scans.down.sql
-│   ├── 003_create_favorites.up.sql
-│   └── 003_create_favorites.down.sql
-│
-├── go.mod
-├── go.sum
-├── Makefile                         # build, run, test, migrate commands
-├── Dockerfile
-├── docker-compose.yml               # PostgreSQL + app for local dev
-├── .env.example
-├── ARCHITECTURE.md                  # This file
-└── README.md
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         Frontend (Next.js)                               │
+│                      backendApi.ts (unchanged)                           │
+└───────────────────────────┬──────────────────────────────────────────────┘
+                            │  HTTP (JSON / multipart)
+                            ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        chi Router + Middleware                            │
+│                                                                          │
+│   RequestID ──▶ Logging ──▶ Recoverer ──▶ CORS ──▶ OptionalAuth         │
+│                                                         │                │
+│                                                         ▼                │
+│                              ┌──────────────────────────────────┐        │
+│                              │          HTTP Handlers           │        │
+│                              │                                  │        │
+│                              │  analyze.go    recommend.go      │        │
+│                              │  user.go       scan.go           │        │
+│                              │  favorite.go   template.go       │        │
+│                              │  health.go     docs.go           │        │
+│                              └──────────┬───────────────────────┘        │
+└─────────────────────────────────────────┼────────────────────────────────┘
+                                          │
+                    ┌─────────────────────┼─────────────────────┐
+                    │                     │                     │
+                    ▼                     ▼                     ▼
+        ┌───────────────────┐  ┌──────────────────┐  ┌─────────────────┐
+        │   Service Layer   │  │   Agent Layer    │  │ Repository Layer│
+        │                   │  │                  │  │                 │
+        │ analyze_service   │  │  VisionOCR       │  │  UserRepo       │
+        │ recommend_service │  │  SearchAgent     │  │  ScanRepo       │
+        │ user_service      │  │  ScorerAgent     │  │  FavoriteRepo   │
+        │ scan_service      │  │  RecommenderAgent│  │                 │
+        │                   │  │  Orchestrator    │  │  (pgx/v5 pool)  │
+        └───────────────────┘  └────────┬─────────┘  └────────┬────────┘
+                                        │                     │
+                                        ▼                     ▼
+                               ┌────────────────┐    ┌────────────────┐
+                               │  Gemini 2.5    │    │  PostgreSQL 16 │
+                               │  Flash (ADK)   │    │  (3 tables)    │
+                               │  + Google      │    │                │
+                               │    Search      │    │  users         │
+                               └────────────────┘    │  scans         │
+                                                     │  favorites     │
+                                                     └────────────────┘
 ```
 
----
-
-## Database Schema
-
-### Table: `users`
-
-```sql
-CREATE TABLE users (
-    id                TEXT PRIMARY KEY,          -- Auth0 sub (e.g. "auth0|abc123")
-    email             TEXT NOT NULL,
-    name              TEXT,
-    picture           TEXT,
-    allergies         JSONB DEFAULT '[]'::jsonb,
-    diet_goals        JSONB DEFAULT '[]'::jsonb,
-    avoid_ingredients JSONB DEFAULT '[]'::jsonb,
-    created_at        TIMESTAMPTZ DEFAULT NOW(),
-    updated_at        TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-### Table: `scans`
-
-```sql
-CREATE TABLE scans (
-    id            TEXT PRIMARY KEY,
-    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    product_name  TEXT NOT NULL,
-    brand         TEXT DEFAULT '',
-    image         TEXT,                           -- base64 or URL
-    safety_score  INTEGER NOT NULL,
-    is_safe       BOOLEAN NOT NULL,
-    ingredients   JSONB DEFAULT '[]'::jsonb,
-    timestamp     TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX idx_scans_user_id ON scans(user_id);
-CREATE INDEX idx_scans_timestamp ON scans(timestamp DESC);
-```
-
-### Table: `favorites`
-
-```sql
-CREATE TABLE favorites (
-    id            SERIAL PRIMARY KEY,
-    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    product_name  TEXT NOT NULL,
-    brand         TEXT DEFAULT '',
-    safety_score  INTEGER,
-    image         TEXT,
-    added_at      TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(user_id, product_name)
-);
-CREATE INDEX idx_favorites_user_id ON favorites(user_id);
-```
-
----
-
-## API Contract
-
-All routes match the existing Python backend exactly. The frontend `backendApi.ts` requires **zero changes**.
-
-### Health
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET    | `/`  | No   | Health check → `{ message, status, version }` |
-
-### Product Analysis
-
-| Method | Path | Auth | Request | Response |
-|--------|------|------|---------|----------|
-| POST   | `/api/analyze` | Optional (Bearer) | `multipart/form-data` with `image` file | `{ status, product_name, scoring_data }` |
-| GET    | `/api/reccomendations/{product_name}/{overall_score}` | No | Path params | `{ status, reccomender_data }` |
-
-### Users
-
-| Method | Path | Auth | Request | Response |
-|--------|------|------|---------|----------|
-| GET    | `/api/users/me` | Required | — | `{ user }` |
-| GET    | `/api/users/{user_id}` | No | — | `{ user }` |
-| POST   | `/api/users` | No | JSON body: `{ id, email, name, picture?, allergies?, dietGoals?, avoidIngredients? }` | `{ user }` |
-| POST   | `/api/users/{user_id}/preferences` | No | JSON body: `{ allergies?, dietGoals?, avoidIngredients? }` | `{ user }` |
-
-### Dietary Templates
-
-| Method | Path | Auth | Request | Response |
-|--------|------|------|---------|----------|
-| GET    | `/api/dietary-templates` | No | — | `{ templates }` |
-| POST   | `/api/users/{user_id}/apply-template/{template_key}` | No | — | `{ user, template }` |
-
-### Scans
-
-| Method | Path | Auth | Request | Response |
-|--------|------|------|---------|----------|
-| GET    | `/api/users/{user_id}/scans` | No | Query: `limit` (optional) | `{ scans }` |
-| POST   | `/api/users/{user_id}/scans` | No | JSON body: scan data | `{ scan, status }` |
-| GET    | `/api/users/{user_id}/stats` | No | — | `{ stats }` |
-
-### Favorites
-
-| Method | Path | Auth | Request | Response |
-|--------|------|------|---------|----------|
-| GET    | `/api/users/{user_id}/favorites` | No | — | `{ favorites }` |
-| POST   | `/api/users/{user_id}/favorites` | No | JSON body: `{ productName, brand?, safetyScore?, image? }` | `{ favorite, status }` |
-| DELETE | `/api/users/{user_id}/favorites/{favorite_id}` | No | — | `{ status }` |
-| GET    | `/api/users/{user_id}/favorites/check/{product_name}` | No | — | `{ isFavorite }` |
-
-### Response JSON Field Naming
-
-All JSON responses use **camelCase** keys to match the existing frontend expectations:
-
-```json
-// User
-{ "id", "email", "name", "picture", "allergies", "dietGoals", "avoidIngredients", "createdAt" }
-
-// Scan
-{ "id", "productName", "brand", "image", "safetyScore", "isSafe", "ingredients", "timestamp" }
-
-// Favorite
-{ "id", "productName", "brand", "safetyScore", "image", "addedAt" }
-
-// Stats
-{ "totalScans", "todayScans", "safeToday", "riskyToday", "averageScore" }
-```
-
----
-
-## Agent Architecture (Google ADK + Gemini)
-
-The current Python backend uses 3 OpenAI-based agents. The Go backend replaces them with Gemini-powered equivalents using Google's Gen AI SDK.
-
-### Analysis Pipeline Flow (same as Python)
+### AI Analysis Pipeline (POST /api/analyze)
 
 ```
-Image bytes
-    │
-    ▼
-┌──────────────────────┐
-│  Gemini Vision       │  Extract product name from image
-│  (gemini-2.0-flash)  │  Input: image bytes
-│                      │  Output: product name string
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│  Search Agent        │  Find ingredient list via web search
-│  (gemini-2.0-flash   │  Input: product name
-│   + Google Search    │  Output: WebSearchResult
-│     grounding)       │    { List_of_ingredients: [{name, description}] }
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│  Scorer Agent        │  Score each ingredient for safety
-│  (gemini-2.0-flash)  │  Input: ingredients JSON + user preferences
-│                      │  Output: ScorerResult
-│                      │    { ingredient_scores: [{name, score, reasoning}],
-│                      │      overall_score: float }
-└──────────┬───────────┘
-           │
-           ▼
-    Return to client
+Image bytes (multipart upload)
+        │
+        ▼
+┌───────────────────────────┐
+│     VisionOCR Agent       │   Gemini Vision (direct genai call)
+│  Extract product name     │   Input:  image bytes + MIME type
+│  from product photo       │   Output: "Coca-Cola Zero Sugar"
+└───────────┬───────────────┘
+            │
+            ▼
+┌───────────────────────────┐
+│    Search Agent (ADK)     │   Gemini 2.5 Flash + Google Search grounding
+│  Find real-time           │   Input:  product name
+│  ingredient list          │   Output: WebSearchResult
+│  from the web             │     { List_of_ingredients: [{name, description}] }
+└───────────┬───────────────┘
+            │
+            ▼
+┌───────────────────────────┐
+│    Scorer Agent (ADK)     │   Gemini 2.5 Flash (no tools)
+│  Score each ingredient    │   Input:  ingredients JSON + user preferences
+│  against user profile     │   Output: ScorerResult
+│  (allergies, diet goals,  │     { ingredient_scores: [{name, score, reasoning}],
+│   avoid list)             │       overall_score: 0-10 }
+└───────────┬───────────────┘
+            │
+            ▼
+      Return to client
+      (product_name + scoring_data)
 ```
 
-### Recommendation Pipeline (separate endpoint)
+### Recommendation Pipeline (GET /api/reccomendations)
 
 ```
 Product name + overall score
-    │
-    ▼
-┌──────────────────────┐
-│  Recommender Agent   │  Suggest healthier alternatives
-│  (gemini-2.0-flash   │  Input: product name + score
-│   + Google Search    │  Output: RecommenderResult
-│     grounding)       │    { recommendations: [{product_name, health_score, reason}] }
-└──────────┬───────────┘
-           │
-           ▼
-    Return to client
+        │
+        ▼
+┌───────────────────────────┐
+│  Recommender Agent (ADK)  │   Gemini 2.5 Flash + Google Search grounding
+│  Suggest 3 healthier      │   Input:  product name + current score
+│  alternatives             │   Output: RecommenderResult
+│                           │     { recommendations: [{product_name,
+│                           │       health_score, reason}] }
+└───────────┬───────────────┘
+            │
+            ▼
+      Return to client
 ```
 
-### Agent Implementation Approach
+### Full Orchestrator Pipeline (AnalyzeAndImprove — internal)
 
-Each agent is a Go function that:
-1. Constructs a prompt (system + user input)
-2. Calls `genai.Client.Models.GenerateContent()` with the appropriate model
-3. Uses **Google Search grounding** tool config where web search is needed
-4. Parses structured JSON output into typed Go structs
-5. Returns the result
-
-```go
-// Pseudo-code for Search Agent
-func (a *SearchAgent) Run(ctx context.Context, productName string) (*model.WebSearchResult, error) {
-    resp, err := a.client.Models.GenerateContent(ctx, "gemini-2.0-flash", 
-        genai.Text(productName),
-        &genai.GenerateContentConfig{
-            SystemInstruction: genai.NewContentFromText(searchPrompt, "user"),
-            Tools: []*genai.Tool{{GoogleSearch: &genai.GoogleSearch{}}},
-            ResponseMIMEType: "application/json",
-            ResponseSchema: webSearchResultSchema,
-        },
-    )
-    // parse resp.Text() into WebSearchResult
-}
+```
+Search ──▶ Score ──▶ [if score < 7.0] ──▶ Loop (max 2 turns) {
+                                              Recommend ──▶ Rescore
+                                              [break if improved]
+                                          }
 ```
 
-### Agent Output Structs (Go)
-
-```go
-// WebSearchResult — matches Python WebSearchResult
-type Ingredient struct {
-    Name        string `json:"name"`
-    Description string `json:"description"`
-}
-type WebSearchResult struct {
-    ListOfIngredients []Ingredient `json:"List_of_ingredients"`
-}
-
-// ScorerResult — matches Python ScorerResult
-type IngredientScore struct {
-    IngredientName string `json:"ingredient_name"`
-    SafetyScore    string `json:"safety_score"` // "LOW", "MEDIUM", "HIGH"
-    Reasoning      string `json:"reasoning"`
-}
-type ScorerResult struct {
-    IngredientScores []IngredientScore `json:"ingredient_scores"`
-    OverallScore     float64           `json:"overall_score"`
-}
-
-// RecommenderResult — matches Python ReccomenderResult
-type Recommendation struct {
-    ProductName string `json:"product_name"`
-    HealthScore string `json:"health_score"`
-    Reason      string `json:"reason"`
-}
-type RecommenderResult struct {
-    Recommendations []Recommendation `json:"recommendations"`
-}
-```
+The orchestrator uses ADK's `sequentialagent` for the Search → Score chain and `loopagent` for the refinement cycle. This is built and ready internally but exposed as two separate endpoints to give the frontend control over when to fetch recommendations.
 
 ---
 
-## Authentication Flow
+## Layer-by-Layer Breakdown
 
-Same as current Python backend. Auth0 JWT verification with dev-mode bypass.
+### 1. Handler Layer (`internal/handler/`)
 
-```
-Request with `Authorization: Bearer <token>`
-    │
-    ▼
-┌─────────────────────────┐
-│  Auth Middleware         │
-│                         │
-│  1. Extract Bearer token│
-│  2. If DEV_MODE && no   │
-│     token → pass through│
-│     (optional user)     │
-│  3. Fetch JWKS from     │
-│     Auth0 (cached)      │
-│  4. Verify JWT signature│
-│     + claims            │
-│  5. Extract `sub` claim │
-│     as user_id          │
-│  6. Set user_id in      │
-│     request context     │
-└─────────────────────────┘
-```
+Thin HTTP handlers that parse requests, call services, and return JSON responses. Each handler struct receives only its needed dependencies (interface types). Shared utilities in `common.go` handle JSON encoding, error responses, and `chi.URLParam` extraction.
 
-Two middleware variants (matching Python):
+Handlers are responsible for:
+- Request parsing (path params, query params, multipart form data, JSON body)
+- Input validation at the HTTP level (missing fields, invalid formats)
+- Calling the appropriate service method
+- Serializing responses with camelCase JSON keys
 
-- **`RequireAuth`** — returns 401 if no valid token; dev fallback to `"dev-test-user"`
-- **`OptionalAuth`** — extracts user_id if token present, nil otherwise
+The `AnalyzeHandler` accepts multipart image uploads and optionally enriches the analysis with the authenticated user's dietary preferences if a JWT is present.
+
+### 2. Service Layer (`internal/service/`)
+
+Business logic orchestration between repositories and agents. Services own input validation rules and coordinate multi-step operations.
+
+- `AnalyzeService`: Chains VisionOCR → Orchestrator (Search + Score), formats the final response
+- `RecommendService`: Wraps the Recommender Agent with validation
+- `UserService`: User CRUD + preference management + dietary template application
+- `ScanService`: Scan history persistence + statistics aggregation
+
+All four services are defined as interfaces in `internal/service/interfaces.go`, enabling handlers to be tested with mock service implementations.
+
+### 3. Agent Layer (`internal/agent/`)
+
+The AI orchestration layer. Each agent is a Go struct wrapping either a direct `genai` client call (VisionOCR) or an ADK `llmagent` (Search, Scorer, Recommender):
+
+| Agent | SDK | Tools | Purpose |
+|-------|-----|-------|---------|
+| **VisionOCR** | `genai` (direct) | None | Extract product name from image via Gemini Vision |
+| **SearchAgent** | ADK `llmagent` | Google Search | Find product ingredients from the web |
+| **ScorerAgent** | ADK `llmagent` (2 variants) | None | Score ingredients or recommendations against user preferences |
+| **RecommenderAgent** | ADK `llmagent` | Google Search | Suggest healthier product alternatives |
+| **Orchestrator** | ADK `sequentialagent` + `loopagent` | — | Chains agents into analysis/recommendation workflows |
+
+Key design: All agents share a single `model.LLM` instance (Gemini 2.5 Flash) but operate with isolated system prompts defined in `prompts.go`. The `runAgentOnce()` helper in `client.go` creates an in-memory ADK session per invocation, runs the agent, and extracts the last text output. A `stripJSONCodeFences()` utility handles LLM outputs wrapped in markdown code blocks.
+
+### 4. Repository Layer (`internal/repository/`)
+
+SQL-first data access using raw `pgx/v5` queries (no ORM). Each repository is a private struct implementing a public interface:
+
+- `UserRepository` — UPSERT with `ON CONFLICT`, JSONB preference management
+- `ScanRepository` — Paginated listing with `LIMIT`, stats aggregation with `COUNT`/`AVG`/`CASE`
+- `FavoriteRepository` — Unique constraint enforcement, existence checks
+
+The `DB` struct in `postgres.go` manages the `pgxpool.Pool` and exposes a `pgx.Row`/`pgx.Rows` querier interface. Repositories accept this interface rather than a concrete pool, enabling `pgxmock`-based testing without a running database.
+
+Migrations run automatically at server startup via `golang-migrate`, reading versioned SQL files from the `migrations/` directory.
 
 ---
 
-## Configuration
+## Database Design
 
-All config from environment variables (loaded from `.env` in dev):
+### Entity Relationship
 
-```bash
-# .env.example
-PORT=8080
-ENV=development                          # "development" | "production"
+```
+users (1) ──────< scans (many)
+  │
+  └──────────────< favorites (many)
 
-# Database
-DATABASE_URL=postgres://safebites:safebites@localhost:5432/safebites?sslmode=disable
-
-# Google AI
-GOOGLE_API_KEY=your-gemini-api-key
-
-# Auth0
-AUTH0_DOMAIN=your-tenant.auth0.com
-AUTH0_API_AUDIENCE=https://your-api-audience
-
-# CORS
-CORS_ORIGINS=http://localhost:3000
+users.id ← TEXT PRIMARY KEY (Auth0 sub, e.g. "auth0|abc123")
+scans.user_id → REFERENCES users(id) ON DELETE CASCADE
+favorites.user_id → REFERENCES users(id) ON DELETE CASCADE
+favorites(user_id, product_name) → UNIQUE constraint
 ```
 
-Go config struct:
+### Schema Details
+
+**users** — Stores Auth0 profile data plus dietary preferences as JSONB arrays. Using JSONB for `allergies`, `diet_goals`, and `avoid_ingredients` avoids junction tables and allows flexible, schema-less preference lists that can grow without migrations.
+
+**scans** — Each analysis result is persisted with the full ingredient breakdown as a JSONB column. Indexed on `user_id` and `timestamp DESC` for efficient history queries. The `id` is a UUID generated server-side.
+
+**favorites** — Tracks bookmarked products with a unique constraint on `(user_id, product_name)` to prevent duplicates. Uses `SERIAL` primary key since favorites don't need external UUIDs.
+
+All tables use `TIMESTAMPTZ` for consistent timezone handling and `ON DELETE CASCADE` for referential integrity cleanup.
+
+---
+
+## Design Decisions
+
+### Why Go over Python/FastAPI?
+
+The original SafeBites backend was written in Python with FastAPI and the OpenAI Agents SDK. The rewrite to Go was motivated by:
+
+1. **Type safety** — Go's static typing catches entire categories of bugs at compile time that Python only surfaces at runtime. Agent response parsing, in particular, benefits from typed struct unmarshaling instead of dynamic dict access.
+2. **Concurrency model** — Go's goroutines and channels provide lightweight concurrency without the GIL limitations of Python. The HTTP server handles concurrent requests natively without async/await complexity.
+3. **Google ADK for Go** — Google's Agent Development Kit has first-class Go support with `sequentialagent`, `loopagent`, and `llmagent` primitives. This provides structured agent orchestration that the OpenAI SDK didn't offer in the Python version.
+4. **Single binary deployment** — `go build` produces a single static binary. The Docker image is an Alpine container with just the binary + migration files — no runtime, no virtualenv, no dependency resolution at deploy time.
+5. **Performance** — Go's compiled nature delivers lower latency and memory usage. The server starts in milliseconds rather than seconds.
+
+### Why chi over stdlib or Gin?
+
+chi was chosen because it is fully compatible with `net/http` (handlers are standard `http.HandlerFunc`), supports composable middleware chains, and provides `chi.URLParam` for path parameter extraction. Unlike Gin, chi doesn't introduce a custom `Context` type — everything is standard library, so handlers can be tested with `httptest` without framework-specific setup.
+
+### Why raw SQL (pgx) over an ORM?
+
+Using `pgx/v5` with raw SQL provides:
+- Full control over queries without ORM-generated SQL surprises
+- Direct access to PostgreSQL-specific features (JSONB, `ON CONFLICT DO UPDATE`)
+- Lighter dependency footprint than GORM or Ent
+- Simpler debugging — the SQL in the code is what runs against the database
+
+### Why JSONB for preferences instead of junction tables?
+
+User preferences (allergies, diet goals, avoid ingredients) are stored as JSONB arrays rather than normalized junction tables. This was intentional:
+- Preferences are always read/written as a unit — there's no need to query "all users allergic to peanuts"
+- A single `UPDATE` with `$1::jsonb` replaces the preference list atomically
+- The dietary template application becomes a single row update instead of multi-table cascade
+- Schema evolution (adding new preference types) requires no migration
+
+### Why separate Search + Scorer agents instead of one?
+
+Splitting the analysis into Search and Scorer agents follows the single-responsibility principle at the AI layer:
+- The **Search Agent** is optimized for retrieval — it uses Google Search grounding to find real-time ingredient data and doesn't need to reason about safety
+- The **Scorer Agent** is optimized for reasoning — it evaluates ingredients against user-specific preferences without needing web access
+- This separation makes each agent's prompt smaller and more focused, improving output quality
+- It enables independent testing — Search logic can be validated against mocked web results, while Scorer logic can be tested with predefined ingredient lists
+
+### Why auto-run migrations at startup?
+
+The server applies pending migrations on startup via `golang-migrate`. This eliminates a separate migration step in deployment pipelines, ensures the database schema is always consistent with the application version, and simplifies local development (just `make run`). In a production multi-instance scenario, `golang-migrate` uses advisory locks to ensure only one instance runs migrations.
+
+---
+
+## Go Patterns Used
+
+### Repository Pattern
+
+Every data access operation goes through a repository interface. The implementations are private structs, and only the interface is exported. This inverts the dependency — handlers and services depend on abstractions, not concrete database code.
 
 ```go
-type Config struct {
-    Port             string   // default "8080"
-    Env              string   // default "development"
-    DatabaseURL      string   // required
-    GoogleAPIKey     string   // required
-    Auth0Domain      string   // empty = dev mode
-    Auth0APIAudience string
-    CORSOrigins      []string // comma-separated
+// interfaces.go
+type UserRepository interface {
+    GetByID(ctx context.Context, id string) (*model.User, error)
+    Upsert(ctx context.Context, user *model.User) (*model.User, error)
+    UpdatePreferences(ctx context.Context, id string, prefs *model.UserPreferences) (*model.User, error)
+}
+
+// user_repo.go — private struct, exported constructor returns the interface
+type userRepo struct{ db querier }
+func NewUserRepository(db *DB) UserRepository { return &userRepo{db: db.Pool} }
+```
+
+### Interface Segregation
+
+Each consumer receives only the interface it needs. Handlers don't see repository internals. Services don't see HTTP details. The `AnalyzeHandler` depends on `AnalyzeService` and `UserService` interfaces, not their concrete implementations. This keeps each component testable in isolation.
+
+### Constructor Injection
+
+All dependency wiring happens in `buildRouter()` in `router.go`. Repositories are constructed from the database pool, agents from the LLM model, services from repositories + agents, and handlers from services. No globals, no `init()` functions, no service locator pattern.
+
+```go
+func buildRouter(cfg *config.Config, db *repository.DB) (*chi.Mux, error) {
+    userRepo := repository.NewUserRepository(db)
+    llm, _ := sbagent.NewGeminiModel(ctx, cfg.GoogleAPIKey, "")
+    orchestrator, _ := sbagent.NewOrchestratorFromModel(llm, sbagent.WorkflowConfig{})
+    analyzeService := service.NewAnalyzeService(visionOCR, orchestrator)
+    analyzeHandler := &handler.AnalyzeHandler{Analyze: analyzeService, Users: userService}
+    // ...wire routes...
 }
 ```
 
+### Graceful Shutdown
+
+The server listens for `SIGINT`/`SIGTERM` signals, then calls `srv.Shutdown()` with a 10-second deadline. This allows in-flight requests to complete while refusing new connections — critical for AI-powered endpoints where a single analysis request can take several seconds.
+
+```go
+quit := make(chan os.Signal, 1)
+signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+<-quit
+shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+srv.Shutdown(shutdownCtx)
+```
+
+### Middleware Composition
+
+chi's middleware chain is ordered intentionally: `RequestID` → `Logging` → `Recoverer` → `CORS` → `OptionalAuth`. The logging middleware skips `OPTIONS` preflight requests and the root health check to reduce noise. `OptionalAuth` extracts JWT claims when present but doesn't reject unauthenticated requests; `RequireAuth` is applied selectively per-route (only `/api/users/me`).
+
+### Table-Driven Tests
+
+All 89 test functions follow Go's table-driven pattern with `t.Run()` subtests. Each test case is a struct with named fields for inputs, mock setup, expected outputs, and error expectations. This makes it easy to add edge cases without duplicating test infrastructure.
+
+### FlexibleString for LLM Output Robustness
+
+The `FlexibleString` type in `model/agent.go` implements `UnmarshalJSON` to accept both `"HIGH"` (string) and `8.5` (number) from Gemini outputs. LLMs occasionally return scores as numbers instead of the requested string format — this type handles both transparently without validation errors.
+
+### Embedded Static Assets
+
+The OpenAPI spec (`openapi.json`) is embedded in the handler binary using Go's `//go:embed` directive, eliminating filesystem dependencies at runtime. The Swagger UI HTML is served from a handler function that references the embedded spec path.
+
 ---
 
-## Implementation Phases
+## Python-to-Go Migration
 
-### Phase 1: Project Scaffolding & Database
-> **Goal**: Working server that connects to Postgres and runs migrations
+This backend is a 1:1 API-compatible rewrite of the original Python/FastAPI backend. The frontend `backendApi.ts` requires **zero changes**.
 
-- [ ] Initialize Go module, install dependencies
-- [ ] Create `cmd/server/main.go` entry point
-- [ ] Create `internal/config/config.go`
-- [ ] Create `docker-compose.yml` (PostgreSQL)
-- [ ] Create SQL migration files (users, scans, favorites)
-- [ ] Create `internal/repository/postgres.go` (connection pool + migrate)
-- [ ] Create `Makefile` with build/run/migrate targets
-- [ ] **Test**: Verify DB connects, tables created
+| Concern | Python Backend | Go Backend |
+|---------|---------------|------------|
+| Framework | FastAPI | chi (stdlib `net/http` compatible) |
+| Database | SQLAlchemy ORM + SQLite (dev) | pgx/v5 raw SQL + PostgreSQL always |
+| AI SDK | OpenAI Agents SDK + GPT-4.1-mini | Google ADK + Gemini 2.5 Flash |
+| Web Search | OpenAI WebSearchTool | Google Search grounding (native to Gemini) |
+| Auth | python-jose | golang-jwt/v5 |
+| Config | pydantic + dotenv | env vars + godotenv |
+| Testing | pytest | go test + testify + pgxmock |
+| Deployment | Python runtime + pip install | Single static binary (Alpine container) |
 
-### Phase 2: Models & Repository Layer
-> **Goal**: Full CRUD for users, scans, favorites against real Postgres
-
-- [ ] Create `internal/model/` structs (User, Scan, Favorite, Template, Agent models)
-- [ ] Create `internal/repository/interfaces.go` (repository interfaces)
-- [ ] Implement `internal/repository/user_repo.go`
-- [ ] Implement `internal/repository/scan_repo.go`
-- [ ] Implement `internal/repository/favorite_repo.go`
-- [ ] **Test**: Table-driven tests for each repo method with pgxmock
-
-### Phase 3: HTTP Layer (Handlers + Middleware)
-> **Goal**: All REST endpoints wired up, responding with correct JSON shapes
-
-- [ ] Create `internal/middleware/cors.go`
-- [ ] Create `internal/middleware/logging.go`
-- [ ] Create `internal/middleware/auth.go` (JWT verification + dev bypass)
-- [ ] Create `internal/handler/health.go`
-- [ ] Create `internal/handler/user.go`
-- [ ] Create `internal/handler/preference.go`
-- [ ] Create `internal/handler/template.go`
-- [ ] Create `internal/handler/scan.go`
-- [ ] Create `internal/handler/favorite.go`
-- [ ] Wire up router in `main.go`
-- [ ] **Test**: Table-driven handler tests with httptest + mock repos
-
-### Phase 4: Agent Layer (Google ADK + Gemini)
-> **Goal**: All three AI agents working with Gemini models
-
-- [ ] Create `internal/agent/client.go` (Gemini client init)
-- [ ] Create `internal/agent/prompts.go` (port all system prompts)
-- [ ] Create `internal/agent/vision.go` (product name extraction)
-- [ ] Create `internal/agent/search.go` (web search agent)
-- [ ] Create `internal/agent/scorer.go` (scorer agent)
-- [ ] Create `internal/agent/recommender.go` (recommender agent)
-- [ ] **Test**: Mock Gemini client, verify prompt construction & response parsing
-
-### Phase 5: Service Layer & Integration
-> **Goal**: Analysis pipeline wired end-to-end; analyze endpoint works
-
-- [ ] Create `internal/service/analyze_service.go` (vision → search → scorer)
-- [ ] Create `internal/service/recommend_service.go`
-- [ ] Create `internal/service/user_service.go`
-- [ ] Create `internal/service/scan_service.go`
-- [ ] Create `internal/handler/analyze.go` (POST /api/analyze)
-- [ ] Create `internal/handler/recommend.go` (GET /api/reccomendations)
-- [ ] **Test**: Integration tests with real DB (docker-compose) + mocked agents
-
-### Phase 6: Docker, Docs & Polish
-> **Goal**: Production-ready container, README, env example
-
-- [ ] Create `Dockerfile` (multi-stage build)
-- [ ] Update `docker-compose.yml` to include app service
-- [ ] Create `README.md` with setup/run instructions
-- [ ] Create `.env.example`
-- [ ] End-to-end manual test against frontend
+Key differences in the Go version:
+- PostgreSQL is used in all environments (not SQLite for dev), ensuring behavior parity between development and production
+- Agents use Google Search grounding natively rather than a separate web search tool, reducing API calls
+- The ADK `sequentialagent` and `loopagent` provide declarative workflow composition instead of imperative Python orchestration
+- JSON responses use `json` struct tags with camelCase naming to match the frontend contract exactly
 
 ---
 
 ## Testing Strategy
 
-### Test Types
+### Test Coverage by Layer
 
-| Type | Tool | Scope | When |
-|------|------|-------|------|
-| **Unit (table tests)** | `go test` + `testify` | Individual functions, model methods | Every phase |
-| **Repository mock tests** | `pgxmock` | SQL queries without real DB | Phase 2 |
-| **Handler tests** | `httptest` + mock services | HTTP request/response, status codes, JSON shape | Phase 3 |
-| **Agent mock tests** | Custom mock `genai.Client` | Prompt construction, response parsing | Phase 4 |
-| **Integration tests** | `go test` + Docker Postgres | Full stack with real DB, mocked agents | Phase 5 |
+| Layer | Test Files | Tests | Approach |
+|-------|-----------|-------|----------|
+| Config | 1 | 2 | Direct function tests (dev mode auth, CORS parsing) |
+| Middleware | 3 | 4 | `httptest.ResponseRecorder` with crafted requests |
+| Handlers | 5 | 22 | `httptest` server + mock services via interfaces |
+| Repositories | 3 | 17 | `pgxmock` — mock SQL expectations without a real database |
+| Services | 4 | 18 | Mock repositories + mock agents, validate orchestration logic |
+| Agents | 4 | 26 | `fakeLLM` + `fakeVisionClient` test doubles, validate prompt construction and JSON parsing |
+| **Total** | **20** | **89** | |
 
-### Test Conventions
+### Testing Approach
 
-```
-internal/
-  repository/
-    user_repo.go
-    user_repo_test.go        ← pgxmock-based tests
-  handler/
-    user.go
-    user_test.go             ← httptest-based tests
-  agent/
-    search.go
-    search_test.go           ← mock client tests
-  service/
-    analyze_service.go
-    analyze_service_test.go  ← integration tests
-```
+**Repository tests** use `pgxmock` to set up expected SQL queries and verify that the repository code constructs correct queries and properly maps database rows to Go structs. No running PostgreSQL is needed.
 
-### Table Test Example
+**Handler tests** use Go's `httptest.NewServer` with mock service implementations injected via interfaces. Each test verifies HTTP status codes, response body JSON structure, and error handling paths.
 
-```go
-func TestUserRepo_GetUser(t *testing.T) {
-    tests := []struct {
-        name     string
-        userID   string
-        mockSetup func(mock pgxmock.PgxPoolIface)
-        want     *model.User
-        wantErr  bool
-    }{
-        {
-            name:   "existing user",
-            userID: "auth0|123",
-            mockSetup: func(mock pgxmock.PgxPoolIface) {
-                rows := pgxmock.NewRows([]string{"id","email","name",...}).
-                    AddRow("auth0|123", "test@test.com", "Test", ...)
-                mock.ExpectQuery("SELECT").WithArgs("auth0|123").WillReturnRows(rows)
-            },
-            want: &model.User{ID: "auth0|123", Email: "test@test.com", ...},
-        },
-        {
-            name:   "user not found",
-            userID: "auth0|999",
-            mockSetup: func(mock pgxmock.PgxPoolIface) {
-                mock.ExpectQuery("SELECT").WithArgs("auth0|999").
-                    WillReturnError(pgx.ErrNoRows)
-            },
-            want:    nil,
-            wantErr: false, // Not found is not an error, returns nil
-        },
-    }
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            mock, _ := pgxmock.NewPool()
-            defer mock.Close()
-            tt.mockSetup(mock)
-            repo := repository.NewUserRepo(mock)
-            got, err := repo.GetUser(context.Background(), tt.userID)
-            if tt.wantErr {
-                assert.Error(t, err)
-            } else {
-                assert.NoError(t, err)
-                assert.Equal(t, tt.want, got)
-            }
-        })
-    }
-}
-```
+**Agent tests** use a `fakeLLM` struct that implements the `model.LLM` interface and returns predefined responses. This isolates tests from actual Gemini API calls while verifying prompt construction, JSON parsing, and error handling (malformed JSON, code-fenced output, empty responses).
 
-### Interfaces for Testability
+**Service tests** combine mock repositories and mock agents to verify business logic: input validation, orchestration order, and correct data transformation between layers.
 
-All major components expose interfaces so handlers/services can be tested with mocks:
+### What the Tests Cover
 
-```go
-// Repository interfaces
-type UserRepository interface {
-    GetUser(ctx context.Context, id string) (*model.User, error)
-    CreateOrUpdateUser(ctx context.Context, user *model.User) (*model.User, error)
-    UpdatePreferences(ctx context.Context, id string, prefs *model.UserPreferences) (*model.User, error)
-    ApplyTemplate(ctx context.Context, id string, templateKey string) (*model.User, error)
-}
-
-type ScanRepository interface {
-    GetUserScans(ctx context.Context, userID string, limit *int) ([]model.Scan, error)
-    AddScan(ctx context.Context, userID string, scan *model.Scan) (*model.Scan, error)
-    GetUserStats(ctx context.Context, userID string) (*model.UserStats, error)
-}
-
-type FavoriteRepository interface {
-    GetFavorites(ctx context.Context, userID string) ([]model.Favorite, error)
-    AddFavorite(ctx context.Context, userID string, fav *model.Favorite) (*model.Favorite, error)
-    RemoveFavorite(ctx context.Context, userID string, favID int) error
-    IsFavorite(ctx context.Context, userID string, productName string) (bool, error)
-}
-
-// Agent interfaces
-type VisionAgent interface {
-    ExtractProductName(ctx context.Context, imageBytes []byte) (string, error)
-}
-
-type SearchAgent interface {
-    Search(ctx context.Context, productName string) (*model.WebSearchResult, error)
-}
-
-type ScorerAgent interface {
-    Score(ctx context.Context, ingredients string, prefs *model.UserPreferences) (*model.ScorerResult, error)
-}
-
-type RecommenderAgent interface {
-    Recommend(ctx context.Context, productName string, score float64) (*model.RecommenderResult, error)
-}
-```
+- Happy paths for all CRUD operations
+- Input validation (missing fields, invalid formats, out-of-range scores)
+- Error propagation (database errors, agent failures, malformed AI responses)
+- Edge cases (null safety scores, empty preference lists, user not found still completes analysis)
+- LLM output resilience (code-fenced JSON, mixed string/number types)
+- Middleware behavior (dev-mode auth bypass, CORS header verification, request logging skip conditions)
+- Orchestrator control flow (early stopping when score improves, max iteration limits, high initial score bypass)
 
 ---
 
-## Running Locally
+## Future Additions
 
-```bash
-# 1. Start PostgreSQL
-docker-compose up -d postgres
+### 1. Price-Aware Recommendations
 
-# 2. Run migrations
-make migrate-up
+Currently, the Recommender Agent suggests healthier alternatives based purely on health scores. Adding price awareness would constrain recommendations to products within a configurable price range (e.g., ±25% of the scanned product's estimated price).
 
-# 3. Set env vars
-cp .env.example .env
-# Edit .env with your GOOGLE_API_KEY
+**Implementation approach:**
+- Extend the Search Agent to extract price data alongside ingredients during web search
+- Add a `price_range` field to the `RecommenderResult` struct
+- Modify the recommender prompt to accept a price constraint and filter alternatives accordingly
+- Store price estimates in the `scans` table for historical price tracking
+- Expose a `max_price_deviation` query parameter on the recommendations endpoint
 
-# 4. Run server
-make run
-# → Server listening on :8080
+This matters because health-only recommendations can suggest premium organic products that are impractical for budget-conscious users. Price-bounded suggestions make the system genuinely useful for everyday shopping decisions.
 
-# 5. Run tests
-make test
+### 2. Barcode Scanning Support
 
-# 6. Run with Docker (full stack)
-docker-compose up --build
-```
+The current system relies on Gemini Vision to extract product names from images, which can fail on products with unclear labeling or non-English packaging. Adding barcode/UPC scanning would provide a deterministic product identification path.
 
-### Makefile Targets
+**Implementation approach:**
+- Add a barcode detection step before Vision OCR in the analysis pipeline (using an open barcode database API like Open Food Facts)
+- If a barcode is detected and matches a known product, skip Vision OCR entirely and use the database result
+- Fall back to Vision OCR for unrecognized barcodes
+- Cache barcode → product name mappings in a new `products` table to reduce API calls
+- Add a `POST /api/scan-barcode` endpoint for apps that use the device camera's native barcode scanner
 
-```makefile
-build:          go build -o bin/server ./cmd/server
-run:            go run ./cmd/server
-test:           go test ./... -v -count=1
-test-cover:     go test ./... -coverprofile=coverage.out && go tool cover -html=coverage.out
-migrate-up:     migrate -path migrations -database "$(DATABASE_URL)" up
-migrate-down:   migrate -path migrations -database "$(DATABASE_URL)" down
-lint:           golangci-lint run
-docker-build:   docker build -t safebites-backend .
-```
+This matters because barcode lookup is instantaneous and deterministic (no AI hallucination risk), reducing latency for well-known products while keeping the Vision OCR path for products without barcodes.
+
+### 3. Scan Sharing and Comparison
+
+Users should be able to share their scan results and compare two products side-by-side to make informed choices at the store.
+
+**Implementation approach:**
+- Generate shareable links for scan results with a unique token (`GET /api/scans/{scan_id}/share`)
+- Add a `POST /api/compare` endpoint that accepts two product names and returns a side-by-side ingredient and safety score comparison
+- Store comparison history linked to the user for future reference
+- The comparison agent would reuse the existing Scorer Agent to evaluate both products against the same user preferences in a single request
+
+This matters because food safety decisions often happen in the moment — "should I buy Product A or Product B?" — and the current system only evaluates products individually. Side-by-side comparison with shared context (same user preferences applied to both) provides direct decision support.
