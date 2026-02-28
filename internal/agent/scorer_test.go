@@ -60,3 +60,13 @@ func TestScorerCodeFenceJSON(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 6.0, out.OverallScore)
 }
+
+func TestScorerJSONWrappedInProse(t *testing.T) {
+	fake := newFakeLLM("Scoring output:\n```json\n{\"ingredient_scores\":[{\"ingredient_name\":\"Salt\",\"safety_score\":\"MEDIUM\",\"reasoning\":\"Needs moderation\"}],\"overall_score\":6.0}\n```\nend")
+	a, err := NewScorerAgent(fake)
+	require.NoError(t, err)
+
+	out, err := a.ScoreIngredients(context.Background(), []model.Ingredient{{Name: "Salt", Description: "Seasoning"}}, nil)
+	require.NoError(t, err)
+	require.Equal(t, 6.0, out.OverallScore)
+}

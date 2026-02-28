@@ -45,7 +45,10 @@ func (a *SearchAgent) Search(ctx context.Context, productName string) (*sbmodel.
 		return nil, err
 	}
 
-	raw = stripJSONCodeFences(raw)
+	raw, err = extractJSONObject(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse search result: %w", err)
+	}
 
 	var out sbmodel.WebSearchResult
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {

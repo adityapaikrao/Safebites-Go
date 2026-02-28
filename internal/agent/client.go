@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -118,4 +119,61 @@ func stripJSONCodeFences(raw string) string {
 	}
 
 	return strings.TrimSpace(trimmed)
+}
+
+func extractJSONObject(raw string) (string, error) {
+	trimmed := stripJSONCodeFences(raw)
+	if json.Valid([]byte(trimmed)) {
+		return trimmed, nil
+	}
+
+	start := -1
+	depth := 0
+	inString := false
+	escape := false
+
+	for i := 0; i < len(trimmed); i++ {
+		ch := trimmed[i]
+
+		if start == -1 {
+			if ch == '{' {
+				start = i
+				depth = 1
+			}
+			continue
+		}
+
+		if inString {
+			if escape {
+				escape = false
+				continue
+			}
+			if ch == '\\' {
+				escape = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				candidate := strings.TrimSpace(trimmed[start : i+1])
+				if json.Valid([]byte(candidate)) {
+					return candidate, nil
+				}
+				break
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no valid json object found in agent response")
 }

@@ -54,7 +54,10 @@ func (a *RecommenderAgent) Recommend(ctx context.Context, productName string, sc
 		return nil, err
 	}
 
-	raw = stripJSONCodeFences(raw)
+	raw, err = extractJSONObject(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse recommender result: %w", err)
+	}
 
 	var out sbmodel.RecommenderResult
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {

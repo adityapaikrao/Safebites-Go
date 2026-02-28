@@ -49,3 +49,14 @@ func TestSearchAgentCodeFenceJSON(t *testing.T) {
 	require.Len(t, out.ListOfIngredients, 1)
 	require.Equal(t, "Water", out.ListOfIngredients[0].Name)
 }
+
+func TestSearchAgentJSONWrappedInProse(t *testing.T) {
+	fake := newFakeLLM("I found the ingredients below:\n```json\n{\"List_of_ingredients\":[{\"name\":\"Water\",\"description\":\"Solvent\"}]}\n```\nlet me know if you need more details")
+	a, err := NewSearchAgent(fake)
+	require.NoError(t, err)
+
+	out, err := a.Search(context.Background(), "Sparkling Water")
+	require.NoError(t, err)
+	require.Len(t, out.ListOfIngredients, 1)
+	require.Equal(t, "Water", out.ListOfIngredients[0].Name)
+}

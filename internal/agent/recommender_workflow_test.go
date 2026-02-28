@@ -49,6 +49,16 @@ func TestRecommenderCodeFenceJSON(t *testing.T) {
 	require.Len(t, out.Recommendations, 1)
 }
 
+func TestRecommenderJSONWrappedInProse(t *testing.T) {
+	fake := newFakeLLM("Here are alternatives:\n```json\n{\"recommendations\":[{\"product_name\":\"Better Cereal\",\"health_score\":\"HIGH\",\"reason\":\"Lower sugar\"}]}\n```\nthanks")
+	a, err := NewRecommenderAgent(fake)
+	require.NoError(t, err)
+
+	out, err := a.Recommend(context.Background(), "Sugary Cereal", 3.0)
+	require.NoError(t, err)
+	require.Len(t, out.Recommendations, 1)
+}
+
 func TestOrchestratorStopsWhenScoreImproves(t *testing.T) {
 	fake := newFakeLLM(
 		`{"List_of_ingredients":[{"name":"Sugar","description":"Sweetener"}]}`,
