@@ -35,9 +35,9 @@ The backend exposes 18 REST endpoints, persists user data and scan history in Po
                             │  HTTP (JSON / multipart)
                             ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                        chi Router + Middleware                            │
+│                        chi Router + Middleware                           │
 │                                                                          │
-│   RequestID ──▶ Logging ──▶ Recoverer ──▶ CORS ──▶ OptionalAuth         │
+│   RequestID ──▶ Logging ──▶ Recoverer ──▶ CORS ──▶ Auth0 (JWT)           │
 │                                                         │                │
 │                                                         ▼                │
 │                              ┌──────────────────────────────────┐        │
