@@ -170,7 +170,7 @@ func extractJSONObject(raw string) (string, error) {
 				if json.Valid([]byte(candidate)) {
 					return candidate, nil
 				}
-				break
+				return "", fmt.Errorf("no valid json object found in agent response")
 			}
 		}
 	}
