@@ -8,6 +8,18 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// LangfuseConfig holds credentials for Langfuse observability.
+type LangfuseConfig struct {
+	PublicKey string
+	SecretKey string
+	Host      string // e.g. "https://us.cloud.langfuse.com"
+}
+
+// Enabled returns true when both PublicKey and SecretKey are set.
+func (l LangfuseConfig) Enabled() bool {
+	return strings.TrimSpace(l.PublicKey) != "" && strings.TrimSpace(l.SecretKey) != ""
+}
+
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
 	Port             string
@@ -18,6 +30,7 @@ type Config struct {
 	Auth0Domain      string
 	Auth0APIAudience string
 	CORSOrigins      []string
+	Langfuse         LangfuseConfig
 }
 
 // Load reads configuration from environment variables, loading .env if present.
@@ -34,6 +47,11 @@ func Load() *Config {
 		Auth0Domain:      getEnv("AUTH0_DOMAIN", ""),
 		Auth0APIAudience: getEnv("AUTH0_API_AUDIENCE", ""),
 		CORSOrigins:      parseCORSOrigins(getEnv("CORS_ORIGINS", "http://localhost:3000")),
+		Langfuse: LangfuseConfig{
+			PublicKey: getEnv("LANGFUSE_PUBLIC_KEY", ""),
+			SecretKey: getEnv("LANGFUSE_SECRET_KEY", ""),
+			Host:      getEnv("LANGFUSE_BASE_URL", "https://us.cloud.langfuse.com"),
+		},
 	}
 
 	return cfg
