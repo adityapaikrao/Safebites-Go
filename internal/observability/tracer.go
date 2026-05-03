@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -42,13 +43,13 @@ func SetTracerProvider(tp *sdktrace.TracerProvider) {
 }
 
 // InitTracer wires Langfuse via OTLP/HTTP. Returns a shutdown func that is
-// always non-nil. On any error, returns a no-op shutdown and logs.
-func InitTracer(ctx context.Context, cfg config.LangfuseConfig) (func(context.Context) error, error) {
+// always non-nil. On any error, logs and returns a no-op shutdown.
+func InitTracer(ctx context.Context, cfg config.LangfuseConfig) func(context.Context) error {
 	noop := func(context.Context) error { return nil }
 
 	if !cfg.Enabled() {
 		log.Printf("observability: Langfuse keys not set, tracing disabled")
-		return noop, nil
+		return noop
 	}
 
 	host := strings.TrimSpace(cfg.Host)
@@ -56,10 +57,15 @@ func InitTracer(ctx context.Context, cfg config.LangfuseConfig) (func(context.Co
 		host = "https://us.cloud.langfuse.com"
 	}
 
+	// Normalize scheme-less hosts (e.g. "us.cloud.langfuse.com" → "https://us.cloud.langfuse.com").
+	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+		host = "https://" + host
+	}
+
 	u, err := url.Parse(host)
-	if err != nil {
-		log.Printf("observability: invalid LANGFUSE_BASE_URL %q: %v — tracing disabled", host, err)
-		return noop, nil
+	if err != nil || u.Host == "" {
+		log.Printf("observability: invalid LANGFUSE_BASE_URL %q — tracing disabled", host)
+		return noop
 	}
 
 	auth := base64.StdEncoding.EncodeToString([]byte(cfg.PublicKey + ":" + cfg.SecretKey))
@@ -78,7 +84,7 @@ func InitTracer(ctx context.Context, cfg config.LangfuseConfig) (func(context.Co
 	exp, err := otlptracehttp.New(ctx, opts...)
 	if err != nil {
 		log.Printf("observability: OTLP exporter init failed: %v — tracing disabled", err)
-		return noop, nil
+		return noop
 	}
 
 	res, err := resource.Merge(
@@ -90,7 +96,7 @@ func InitTracer(ctx context.Context, cfg config.LangfuseConfig) (func(context.Co
 	)
 	if err != nil {
 		log.Printf("observability: resource init failed: %v — tracing disabled", err)
-		return noop, nil
+		return noop
 	}
 
 	tp := sdktrace.NewTracerProvider(
@@ -110,9 +116,12 @@ func InitTracer(ctx context.Context, cfg config.LangfuseConfig) (func(context.Co
 
 	// Connectivity test: flush a ping span synchronously so auth/network
 	// failures surface at startup rather than silently 5 s later.
-	_, pingSpan := tp.Tracer(tracerName).Start(ctx, "safebites.startup.ping")
+	// Use a short-lived context so a bad host can't block startup indefinitely.
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	_, pingSpan := tp.Tracer(tracerName).Start(pingCtx, "safebites.startup.ping")
 	pingSpan.End()
-	if pingErr := tp.ForceFlush(ctx); pingErr != nil {
+	if pingErr := tp.ForceFlush(pingCtx); pingErr != nil {
 		log.Printf("observability: OTLP connectivity test failed: %v — check LANGFUSE_PUBLIC_KEY/SECRET_KEY", pingErr)
 	} else {
 		log.Printf("observability: OTLP connectivity test passed — traces flowing to Langfuse")
@@ -123,5 +132,5 @@ func InitTracer(ctx context.Context, cfg config.LangfuseConfig) (func(context.Co
 			return fmt.Errorf("tracer shutdown: %w", err)
 		}
 		return nil
-	}, nil
+	}
 }

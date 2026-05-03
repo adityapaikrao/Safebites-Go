@@ -21,10 +21,7 @@ func main() {
 
 	ctx := context.Background()
 
-	shutdownTracer, err := observability.InitTracer(ctx, cfg.Langfuse)
-	if err != nil {
-		log.Printf("tracing init returned non-fatal error: %v", err)
-	}
+	shutdownTracer := observability.InitTracer(ctx, cfg.Langfuse)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

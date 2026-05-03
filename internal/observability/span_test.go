@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
@@ -35,9 +36,9 @@ func TestStartAgentSpan_SetsGenAIAttributes(t *testing.T) {
 	intAttrs := map[string]int64{}
 	for _, kv := range s.Attributes() {
 		switch kv.Value.Type() {
-		case 4: // STRING
+		case attribute.STRING:
 			attrs[string(kv.Key)] = kv.Value.AsString()
-		case 2: // INT64
+		case attribute.INT64:
 			intAttrs[string(kv.Key)] = kv.Value.AsInt64()
 		}
 	}
