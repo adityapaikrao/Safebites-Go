@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"google.golang.org/genai"
+
+	"github.com/safebites/backend-go/internal/observability"
 )
 
 // VisionOCR is intentionally not modeled as an agent.
@@ -52,10 +54,14 @@ func (v *VisionOCR) ExtractProductName(ctx context.Context, imageBytes []byte, m
 	if strings.TrimSpace(mimeType) == "" {
 		mimeType = "image/jpeg"
 	}
-
 	if !isSupportedVisionMimeType(mimeType) {
 		return "", fmt.Errorf("unsupported image mime type: %s", mimeType)
 	}
+
+	ctx, span := observability.StartAgentSpan(ctx, "VisionOCR")
+	defer span.End()
+	span.SetModel(v.model)
+	span.SetGenAIInput(visionOCRPrompt)
 
 	resp, err := v.client.GenerateContent(ctx, v.model, []*genai.Content{
 		genai.NewContentFromParts([]*genai.Part{
@@ -64,14 +70,22 @@ func (v *VisionOCR) ExtractProductName(ctx context.Context, imageBytes []byte, m
 		}, genai.RoleUser),
 	}, &genai.GenerateContentConfig{})
 	if err != nil {
+		span.RecordError(err)
 		return "", err
 	}
 
 	if resp == nil || strings.TrimSpace(resp.Text()) == "" {
-		return "", fmt.Errorf("vision response is empty")
+		err := fmt.Errorf("vision response is empty")
+		span.RecordError(err)
+		return "", err
 	}
 
-	return strings.TrimSpace(resp.Text()), nil
+	out := strings.TrimSpace(resp.Text())
+	span.SetGenAIOutput(out)
+	if resp.UsageMetadata != nil {
+		span.SetTokens(int64(resp.UsageMetadata.PromptTokenCount), int64(resp.UsageMetadata.CandidatesTokenCount))
+	}
+	return out, nil
 }
 
 func isSupportedVisionMimeType(mimeType string) bool {
