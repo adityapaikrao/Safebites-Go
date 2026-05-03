@@ -40,6 +40,8 @@ This is a ground-up rewrite of the original Python/FastAPI + OpenAI Agents backe
 
 **Auth0 Integration** — JWT-based authentication with optional and required middleware variants. Development mode bypasses Auth0 when credentials are not configured, enabling local development without external dependencies.
 
+**LLM Observability (Opt-In)** — `/api/analyze` and `/api/recommendations` requests emit OpenTelemetry traces to Langfuse (via OTLP/HTTP) when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set. Traces include pipeline + agent spans, GenAI prompt/completion attributes, token usage metadata, and startup connectivity checks.
+
 ## Tech Stack
 
 | Component | Technology | Why |
@@ -48,6 +50,7 @@ This is a ground-up rewrite of the original Python/FastAPI + OpenAI Agents backe
 | Router | [chi v5](https://github.com/go-chi/chi) | `net/http` compatible, composable middleware, zero dependencies |
 | Database | PostgreSQL 16 + [pgx/v5](https://github.com/jackc/pgx) | Raw SQL (no ORM), connection pooling, JSONB for flexible schema |
 | AI/LLM | Gemini 2.5 Flash via [Google ADK](https://google.github.io/adk-docs/) + [genai SDK](https://pkg.go.dev/google.golang.org/genai) | Agent orchestration primitives, Google Search grounding, vision support |
+| Observability | [OpenTelemetry Go](https://opentelemetry.io/docs/languages/go/) + [Langfuse](https://langfuse.com/) | End-to-end tracing for analysis/recommendation pipelines with GenAI metadata |
 | Auth | Auth0 + [golang-jwt/v5](https://github.com/golang-jwt/jwt) | Industry-standard JWT verification with dev-mode bypass |
 | Migrations | [golang-migrate/v4](https://github.com/golang-migrate/migrate) | Versioned SQL files, auto-applied at startup |
 | Testing | [testify](https://github.com/stretchr/testify) + [pgxmock](https://github.com/pashagolub/pgxmock) | Assertion helpers, database mocking without a running Postgres |
@@ -169,6 +172,9 @@ make docker-down   # Tear down
 | `AUTH0_API_AUDIENCE` | No | — | Auth0 API audience (omit for dev bypass) |
 | `CORS_ORIGINS` | No | `http://localhost:3000` | Comma-separated allowed origins |
 | `MIGRATIONS_PATH` | No | `migrations` | Path to SQL migration files |
+| `LANGFUSE_PUBLIC_KEY` | No | — | Langfuse public key; with secret key enables tracing export |
+| `LANGFUSE_SECRET_KEY` | No | — | Langfuse secret key; with public key enables tracing export |
+| `LANGFUSE_BASE_URL` | No | `https://us.cloud.langfuse.com` | Langfuse OTLP host (scheme optional; defaults to Langfuse US cloud) |
 
 ## Project Structure
 
@@ -182,5 +188,6 @@ internal/
   repository/        PostgreSQL data access (interfaces + pgx implementations)
   service/           Business logic orchestration, input validation
   agent/             AI pipeline (Vision, Search, Scorer, Recommender, Orchestrator)
+  observability/     OTel tracer setup + span helpers for Langfuse tracing
 migrations/          Versioned SQL (3 tables: users, scans, favorites)
 ```
