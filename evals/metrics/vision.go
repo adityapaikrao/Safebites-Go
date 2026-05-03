@@ -7,6 +7,8 @@ func VisionExactMatch(got, want string) bool {
 }
 
 func VisionFuzzyMatch(got, want string, threshold float64) bool {
+	// ToLower is intentional here: LevenshteinRatio operates rune-by-rune and
+	// full Unicode case folding is not required for ASCII product names.
 	return LevenshteinRatio(strings.ToLower(strings.TrimSpace(got)), strings.ToLower(strings.TrimSpace(want))) >= threshold
 }
 
@@ -26,7 +28,7 @@ func VisionEmpty(got string) bool {
 		"cannot identify",
 	}
 	for _, p := range refusalPrefixes {
-		if strings.HasPrefix(t, p) {
+		if strings.Contains(t, p) {
 			return true
 		}
 	}
