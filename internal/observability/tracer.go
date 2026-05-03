@@ -99,8 +99,24 @@ func InitTracer(ctx context.Context, cfg config.LangfuseConfig) (func(context.Co
 		sdktrace.WithSampler(sdktrace.AlwaysSample()),
 	)
 
+	// Route async export errors through our log stream (default handler uses log.Print but
+	// doesn't prefix — this makes auth/network failures easy to spot).
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		log.Printf("observability: OTLP export error: %v", err)
+	}))
+
 	SetTracerProvider(tp)
 	log.Printf("observability: Langfuse tracing enabled (host=%s)", host)
+
+	// Connectivity test: flush a ping span synchronously so auth/network
+	// failures surface at startup rather than silently 5 s later.
+	_, pingSpan := tp.Tracer(tracerName).Start(ctx, "safebites.startup.ping")
+	pingSpan.End()
+	if pingErr := tp.ForceFlush(ctx); pingErr != nil {
+		log.Printf("observability: OTLP connectivity test failed: %v — check LANGFUSE_PUBLIC_KEY/SECRET_KEY", pingErr)
+	} else {
+		log.Printf("observability: OTLP connectivity test passed — traces flowing to Langfuse")
+	}
 
 	return func(ctx context.Context) error {
 		if err := tp.Shutdown(ctx); err != nil {
