@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/safebites/backend-go/internal/config"
+	"github.com/safebites/backend-go/internal/observability"
 	"github.com/safebites/backend-go/internal/repository"
 )
 
@@ -19,6 +20,19 @@ func main() {
 	log.Printf("starting SafeBites Go backend [env=%s port=%s]", cfg.Env, cfg.Port)
 
 	ctx := context.Background()
+
+	shutdownTracer, err := observability.InitTracer(ctx, cfg.Langfuse)
+	if err != nil {
+		log.Printf("tracing init returned non-fatal error: %v", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracer(shutdownCtx); err != nil {
+			log.Printf("tracer shutdown error: %v", err)
+		}
+	}()
+
 	if err := repository.RunMigrations(cfg.DatabaseURL, cfg.MigrationsPath); err != nil {
 		log.Fatalf("migrations failed: %v", err)
 	}
