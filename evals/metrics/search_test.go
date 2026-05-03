@@ -58,7 +58,7 @@ func TestIngredientRecallAndPrecision(t *testing.T) {
 			wantPrecision:  1.0,
 		},
 		{
-			name:           "reverse substring match",
+			name:           "short got token reverse-matches longer expected token",
 			got:            []string{"wheat"},
 			expected:       []string{"enriched wheat flour"},
 			wantRecall:     1.0,
@@ -77,6 +77,13 @@ func TestIngredientRecallAndPrecision(t *testing.T) {
 			expected:       []string{},
 			wantRecall:     1.0,
 			wantPrecision:  0.0,
+		},
+		{
+			name:           "whitespace-only token in got",
+			got:            []string{"  ", "sugar"},
+			expected:       []string{"sugar"},
+			wantRecall:     1.0,
+			wantPrecision:  0.5,
 		},
 	}
 
@@ -97,15 +104,3 @@ func TestIngredientRecallAndPrecision(t *testing.T) {
 	}
 }
 
-func TestIngredientRecall_EmptyExpected(t *testing.T) {
-	t.Parallel()
-
-	got := []string{"sugar", "salt"}
-	expected := []string{}
-	want := 1.0
-
-	result := IngredientRecall(got, expected)
-	if math.Abs(result-want) > 1e-9 {
-		t.Fatalf("IngredientRecall(%v, %v) = %v, want %v", got, expected, result, want)
-	}
-}

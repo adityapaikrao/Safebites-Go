@@ -4,7 +4,7 @@ import "strings"
 
 // IngredientRecall = |expected ∩ got| / |expected|.
 // Matching is case-insensitive substring match in both directions
-// (so "wheat flour" matches "enriched wheat flour").
+// (so "wheat flour" matches "enriched wheat flour", and "wheat" also matches "enriched wheat flour").
 func IngredientRecall(got, expected []string) float64 {
 	if len(expected) == 0 {
 		return 1.0
