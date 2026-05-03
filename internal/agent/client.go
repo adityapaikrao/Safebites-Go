@@ -16,6 +16,8 @@ import (
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
+
+	"github.com/safebites/backend-go/internal/observability"
 )
 
 const defaultGeminiModel = "gemini-2.5-flash"
@@ -33,6 +35,11 @@ func NewGeminiModel(ctx context.Context, apiKey string, modelName string) (model
 }
 
 func runAgentOnce(ctx context.Context, appName string, agnt agent.Agent, input string) (string, error) {
+	ctx, span := observability.StartAgentSpan(ctx, appName)
+	defer span.End()
+	span.SetModel(defaultGeminiModel)
+	span.SetGenAIInput(input)
+
 	start := time.Now()
 	log.Printf("agent run start app=%s input_len=%d input_preview=%q", appName, len(input), previewText(input, 160))
 
@@ -44,6 +51,7 @@ func runAgentOnce(ctx context.Context, appName string, agnt agent.Agent, input s
 	})
 	if err != nil {
 		log.Printf("agent run failed app=%s stage=runner_init err=%v", appName, err)
+		span.RecordError(err)
 		return "", fmt.Errorf("create adk runner: %w", err)
 	}
 
@@ -57,6 +65,7 @@ func runAgentOnce(ctx context.Context, appName string, agnt agent.Agent, input s
 	})
 	if err != nil {
 		log.Printf("agent run failed app=%s stage=session_create err=%v", appName, err)
+		span.RecordError(err)
 		return "", fmt.Errorf("create adk session: %w", err)
 	}
 
@@ -66,6 +75,7 @@ func runAgentOnce(ctx context.Context, appName string, agnt agent.Agent, input s
 	for event, runErr := range r.Run(ctx, userID, sessionID, genai.NewContentFromText(input, genai.RoleUser), agent.RunConfig{}) {
 		if runErr != nil {
 			log.Printf("agent run failed app=%s stage=run_stream event_count=%d err=%v", appName, eventCount, runErr)
+			span.RecordError(runErr)
 			return "", runErr
 		}
 		if event == nil || event.LLMResponse.Content == nil {
@@ -82,10 +92,13 @@ func runAgentOnce(ctx context.Context, appName string, agnt agent.Agent, input s
 
 	if strings.TrimSpace(out) == "" {
 		log.Printf("agent run failed app=%s stage=empty_output duration=%s events=%d parts=%d", appName, time.Since(start), eventCount, partsCount)
-		return "", fmt.Errorf("agent returned empty text")
+		emptyErr := fmt.Errorf("agent returned empty text")
+		span.RecordError(emptyErr)
+		return "", emptyErr
 	}
 
 	out = strings.TrimSpace(out)
+	span.SetGenAIOutput(out)
 	log.Printf("agent run complete app=%s duration=%s events=%d parts=%d output_len=%d output_preview=%q", appName, time.Since(start), eventCount, partsCount, len(out), previewText(out, 160))
 	return out, nil
 }

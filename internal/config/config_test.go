@@ -1,6 +1,8 @@
 package config
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestDevModeAuthRequiresBothAuth0Fields(t *testing.T) {
 	cfg := &Config{Env: "development", Auth0Domain: "", Auth0APIAudience: ""}
@@ -24,5 +26,41 @@ func TestParseCORSOriginsTrimsAndSkipsEmpty(t *testing.T) {
 	}
 	if origins[1] != "https://app.example.com" {
 		t.Fatalf("unexpected second origin: %q", origins[1])
+	}
+}
+
+func TestLoad_Langfuse(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("GOOGLE_API_KEY", "k")
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+	t.Setenv("LANGFUSE_SECRET_KEY", "sk-test")
+	t.Setenv("LANGFUSE_BASE_URL", "https://example.langfuse.com")
+
+	cfg := Load()
+
+	if cfg.Langfuse.PublicKey != "pk-test" {
+		t.Errorf("PublicKey = %q, want pk-test", cfg.Langfuse.PublicKey)
+	}
+	if cfg.Langfuse.SecretKey != "sk-test" {
+		t.Errorf("SecretKey = %q, want sk-test", cfg.Langfuse.SecretKey)
+	}
+	if cfg.Langfuse.Host != "https://example.langfuse.com" {
+		t.Errorf("Host = %q, want https://example.langfuse.com", cfg.Langfuse.Host)
+	}
+	if !cfg.Langfuse.Enabled() {
+		t.Error("Enabled() = false, want true when both keys set")
+	}
+}
+
+func TestLoad_LangfuseDisabledWhenKeysMissing(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("GOOGLE_API_KEY", "k")
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "")
+	t.Setenv("LANGFUSE_SECRET_KEY", "")
+
+	cfg := Load()
+
+	if cfg.Langfuse.Enabled() {
+		t.Error("Enabled() = true with no keys, want false")
 	}
 }

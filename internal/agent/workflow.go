@@ -15,6 +15,7 @@ import (
 	"google.golang.org/adk/session"
 
 	sbmodel "github.com/safebites/backend-go/internal/model"
+	"github.com/safebites/backend-go/internal/observability"
 )
 
 const (
@@ -84,6 +85,9 @@ func (o *Orchestrator) AnalyzeOnly(ctx context.Context, productName string, pref
 	if o.searcher == nil || o.scorer == nil {
 		return nil, nil, fmt.Errorf("orchestrator requires searcher and scorer")
 	}
+
+	ctx, span := observability.StartPipelineSpan(ctx, "analyze")
+	defer span.End()
 
 	log.Printf("analyze_only start product=%q has_prefs=%t", productName, prefs != nil)
 
@@ -168,6 +172,9 @@ func (o *Orchestrator) AnalyzeAndImprove(ctx context.Context, productName string
 	if o.searcher == nil || o.scorer == nil || o.recommender == nil {
 		return nil, fmt.Errorf("orchestrator requires searcher, scorer, and recommender")
 	}
+
+	ctx, span := observability.StartPipelineSpan(ctx, "analyze_and_improve")
+	defer span.End()
 
 	log.Printf("workflow analyze start product=%q min_score=%.2f max_turns=%d has_prefs=%t", productName, o.cfg.MinAcceptableScore, o.cfg.MaxRecommendationTx, prefs != nil)
 
