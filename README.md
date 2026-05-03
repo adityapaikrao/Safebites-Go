@@ -5,7 +5,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL_16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![Auth0](https://img.shields.io/badge/Auth0_JWT-EB5424?logo=auth0&logoColor=white)](https://auth0.com)
-[![Tests](https://img.shields.io/badge/tests-89_passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-95_passed-brightgreen)]()
 [![Endpoints](https://img.shields.io/badge/API_endpoints-18-blue)]()
 
 SafeBites is a production-grade, AI-powered backend that helps users with dietary restrictions make safer food choices. Users snap a photo of a food product, and the system identifies it, looks up its ingredients, scores each ingredient against the user's personal dietary profile (allergies, diet goals, avoidances), and recommends healthier alternatives — all in a single request.
@@ -19,9 +19,9 @@ This is a ground-up rewrite of the original Python/FastAPI + OpenAI Agents backe
 | Metric | Value |
 |--------|-------|
 | Language | Go 1.25 |
-| Production code | ~3,000 lines |
-| Test code | ~2,100 lines |
-| Test functions | 89 across 21 test files |
+| Production code | ~3,300 lines |
+| Test code | ~2,250 lines |
+| Test functions | 95 across 23 test files |
 | API endpoints | 18 (REST) |
 | AI agents | 4 (Vision OCR, Search, Scorer, Recommender) |
 | Database tables | 3 (users, scans, favorites) |
@@ -40,6 +40,8 @@ This is a ground-up rewrite of the original Python/FastAPI + OpenAI Agents backe
 
 **Auth0 Integration** — JWT-based authentication with optional and required middleware variants. Development mode bypasses Auth0 when credentials are not configured, enabling local development without external dependencies.
 
+**LLM Observability (Opt-In)** — The analysis pipeline now emits OpenTelemetry traces to Langfuse when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are configured. Traces include root pipeline spans, per-agent spans, GenAI prompt/completion metadata, token usage attributes, and startup connectivity checks.
+
 ## Tech Stack
 
 | Component | Technology | Why |
@@ -48,6 +50,7 @@ This is a ground-up rewrite of the original Python/FastAPI + OpenAI Agents backe
 | Router | [chi v5](https://github.com/go-chi/chi) | `net/http` compatible, composable middleware, zero dependencies |
 | Database | PostgreSQL 16 + [pgx/v5](https://github.com/jackc/pgx) | Raw SQL (no ORM), connection pooling, JSONB for flexible schema |
 | AI/LLM | Gemini 2.5 Flash via [Google ADK](https://google.github.io/adk-docs/) + [genai SDK](https://pkg.go.dev/google.golang.org/genai) | Agent orchestration primitives, Google Search grounding, vision support |
+| Observability | [OpenTelemetry Go](https://opentelemetry.io/docs/languages/go/) + [Langfuse](https://langfuse.com/) | End-to-end tracing for analysis/recommendation workflows with GenAI metadata |
 | Auth | Auth0 + [golang-jwt/v5](https://github.com/golang-jwt/jwt) | Industry-standard JWT verification with dev-mode bypass |
 | Migrations | [golang-migrate/v4](https://github.com/golang-migrate/migrate) | Versioned SQL files, auto-applied at startup |
 | Testing | [testify](https://github.com/stretchr/testify) + [pgxmock](https://github.com/pashagolub/pgxmock) | Assertion helpers, database mocking without a running Postgres |
@@ -132,7 +135,7 @@ make run
 ### Run Tests
 
 ```bash
-make test          # All 89 tests with race detection
+make test          # All 95 tests with race detection
 make test-cover    # Generate HTML coverage report
 ```
 
@@ -169,6 +172,9 @@ make docker-down   # Tear down
 | `AUTH0_API_AUDIENCE` | No | — | Auth0 API audience (omit for dev bypass) |
 | `CORS_ORIGINS` | No | `http://localhost:3000` | Comma-separated allowed origins |
 | `MIGRATIONS_PATH` | No | `migrations` | Path to SQL migration files |
+| `LANGFUSE_PUBLIC_KEY` | No | — | Langfuse public key (required with secret key to enable tracing) |
+| `LANGFUSE_SECRET_KEY` | No | — | Langfuse secret key (required with public key to enable tracing) |
+| `LANGFUSE_BASE_URL` | No | `https://us.cloud.langfuse.com` | Langfuse OTLP host (scheme-less values are normalized to `https://`) |
 
 ## Project Structure
 
@@ -182,5 +188,6 @@ internal/
   repository/        PostgreSQL data access (interfaces + pgx implementations)
   service/           Business logic orchestration, input validation
   agent/             AI pipeline (Vision, Search, Scorer, Recommender, Orchestrator)
+  observability/     Tracer initialization + span helpers for Langfuse/OTel
 migrations/          Versioned SQL (3 tables: users, scans, favorites)
 ```
