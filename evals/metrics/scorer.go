@@ -2,6 +2,7 @@ package metrics
 
 import "strings"
 
+// IngredientScore holds the scorer agent's evaluation of one ingredient.
 type IngredientScore struct {
 	Name      string
 	Score     float64
@@ -44,6 +45,7 @@ func AllergyRespected(scores []IngredientScore, allergies []string) bool {
 //   score >= 7  → "good"
 //   score 4..6  → "neutral"
 //   score <= 3  → "bad"
+// When no got ingredient names appear in expected, returns 0.
 func ScoreDirectionAgreement(got []IngredientScore, expected map[string]string) float64 {
 	if len(expected) == 0 {
 		return 1.0
@@ -65,6 +67,7 @@ func ScoreDirectionAgreement(got []IngredientScore, expected map[string]string) 
 	return float64(hits) / float64(total)
 }
 
+// scoreDirection maps a 1-10 score to "good" (≥7), "bad" (≤3), or "neutral" (4–6).
 func scoreDirection(s float64) string {
 	switch {
 	case s >= 7:
