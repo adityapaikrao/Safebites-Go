@@ -90,6 +90,11 @@ func (r *Runner) RunAgent(ctx context.Context, name string) (*Report, error) {
 	rep := newReport()
 	name = strings.ToLower(name)
 
+	valid := map[string]bool{"all": true, "vision": true, "search": true, "scorer": true, "recommender": true}
+	if !valid[name] {
+		return nil, fmt.Errorf("unknown agent %q: must be vision|search|scorer|recommender|all", name)
+	}
+
 	if name == "all" || name == "vision" {
 		if err := r.runVision(ctx, rep); err != nil { return nil, err }
 	}
@@ -144,6 +149,7 @@ func (r *Runner) runVision(ctx context.Context, rep *Report) error {
 			cr.Pass = isExact || isFuzzy
 			cr.Metrics["exact_match"] = boolToFloat(isExact)
 			cr.Metrics["fuzzy_match"] = boolToFloat(isFuzzy)
+			cr.Metrics["empty_rate"] = boolToFloat(isEmpty)
 		}
 		results = append(results, cr)
 	}
@@ -238,8 +244,16 @@ func (r *Runner) runScorer(ctx context.Context, rep *Report) error {
 
 		var got []metrics.IngredientScore
 		for _, s := range out.IngredientScores {
-			score, _ := strconv.ParseFloat(string(s.SafetyScore), 64)
+			score, err := strconv.ParseFloat(string(s.SafetyScore), 64)
+			if err != nil {
+				cr.Err = fmt.Sprintf("parse safety_score for %q: %v", s.IngredientName, err)
+				break
+			}
 			got = append(got, metrics.IngredientScore{Name: s.IngredientName, Score: score, Reasoning: s.Reasoning})
+		}
+		if cr.Err != "" {
+			allergy = append(allergy, 0); direction = append(direction, 0); jsonValid = append(jsonValid, 0)
+			results = append(results, cr); continue
 		}
 
 		ar := metrics.AllergyRespected(got, c.Input.Prefs.Allergies)
@@ -297,9 +311,17 @@ func (r *Runner) runRecommender(ctx context.Context, rep *Report) error {
 		jsonValid = append(jsonValid, 1.0)
 
 		var recs []metrics.Recommendation
-		for _, r := range out.Recommendations {
-			score, _ := strconv.ParseFloat(string(r.HealthScore), 64)
-			recs = append(recs, metrics.Recommendation{Name: r.ProductName, Score: score})
+		for _, rec := range out.Recommendations {
+			score, err := strconv.ParseFloat(string(rec.HealthScore), 64)
+			if err != nil {
+				cr.Err = fmt.Sprintf("parse health_score for %q: %v", rec.ProductName, err)
+				break
+			}
+			recs = append(recs, metrics.Recommendation{Name: rec.ProductName, Score: score})
+		}
+		if cr.Err != "" {
+			distinct = append(distinct, 0); improved = append(improved, 0); countOk = append(countOk, 0); jsonValid = append(jsonValid, 0)
+			results = append(results, cr); continue
 		}
 		d := metrics.DistinctFromInput(recs, c.Input.ProductName)
 		si := metrics.AllScoresImproved(recs, c.Input.CurrentScore, 1.0)
@@ -309,8 +331,8 @@ func (r *Runner) runRecommender(ctx context.Context, rep *Report) error {
 		countOk = append(countOk, boolToFloat(co))
 
 		cr.Pass = d && si && co
-		cr.Metrics["distinct"] = boolToFloat(d)
-		cr.Metrics["score_improvement"] = boolToFloat(si)
+		cr.Metrics["distinct_from_input"] = boolToFloat(d)
+		cr.Metrics["score_improvement_rate"] = boolToFloat(si)
 		cr.Metrics["count_equals_three"] = boolToFloat(co)
 		results = append(results, cr)
 	}
