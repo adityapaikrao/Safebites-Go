@@ -55,6 +55,23 @@ func TestEvaluateGates(t *testing.T) {
 		}
 	})
 
+	t.Run("unreadable baseline - non-ErrNotExist returns failure", func(t *testing.T) {
+		// Create a directory at the baseline path so ReadFile fails with a non-ErrNotExist error.
+		dir := t.TempDir()
+		dirAsFile := filepath.Join(dir, "is_a_dir")
+		if err := os.Mkdir(dirAsFile, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		report := &Report{Agents: map[string]map[string]float64{"vision": {"exact_match": 0.5}}}
+		failures := EvaluateGates(report, dirAsFile)
+		if len(failures) != 1 {
+			t.Fatalf("expected exactly 1 failure for unreadable baseline, got %d: %v", len(failures), failures)
+		}
+		if !strings.Contains(failures[0], "could not be read") {
+			t.Errorf("expected 'could not be read' message, got: %s", failures[0])
+		}
+	})
+
 	t.Run("unparseable baseline - single failure returned immediately", func(t *testing.T) {
 		report := &Report{
 			Agents: map[string]map[string]float64{

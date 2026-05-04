@@ -69,7 +69,6 @@ type ScorerCase struct {
 		Prefs       sbmodel.UserPreferences `json:"prefs"`
 	} `json:"input"`
 	Expected struct {
-		AllergyRespected     bool              `json:"allergy_respected"`
 		IngredientDirections map[string]string `json:"ingredient_directions"` // name → "good"|"neutral"|"bad"
 		OverallScoreRange    [2]float64        `json:"overall_score_range"`
 	} `json:"expected"`
@@ -240,8 +239,6 @@ func (r *Runner) runScorer(ctx context.Context, rep *Report) error {
 			allergy = append(allergy, 0); direction = append(direction, 0); jsonValid = append(jsonValid, 0)
 			results = append(results, cr); continue
 		}
-		jsonValid = append(jsonValid, 1.0)
-
 		var got []metrics.IngredientScore
 		for _, s := range out.IngredientScores {
 			score, err := strconv.ParseFloat(string(s.SafetyScore), 64)
@@ -255,6 +252,7 @@ func (r *Runner) runScorer(ctx context.Context, rep *Report) error {
 			allergy = append(allergy, 0); direction = append(direction, 0); jsonValid = append(jsonValid, 0)
 			results = append(results, cr); continue
 		}
+		jsonValid = append(jsonValid, 1.0)
 
 		ar := metrics.AllergyRespected(got, c.Input.Prefs.Allergies)
 		da := metrics.ScoreDirectionAgreement(got, c.Expected.IngredientDirections)
@@ -308,8 +306,6 @@ func (r *Runner) runRecommender(ctx context.Context, rep *Report) error {
 			distinct = append(distinct, 0); improved = append(improved, 0); countOk = append(countOk, 0); jsonValid = append(jsonValid, 0)
 			results = append(results, cr); continue
 		}
-		jsonValid = append(jsonValid, 1.0)
-
 		var recs []metrics.Recommendation
 		for _, rec := range out.Recommendations {
 			score, err := strconv.ParseFloat(string(rec.HealthScore), 64)
@@ -323,6 +319,7 @@ func (r *Runner) runRecommender(ctx context.Context, rep *Report) error {
 			distinct = append(distinct, 0); improved = append(improved, 0); countOk = append(countOk, 0); jsonValid = append(jsonValid, 0)
 			results = append(results, cr); continue
 		}
+		jsonValid = append(jsonValid, 1.0)
 		d := metrics.DistinctFromInput(recs, c.Input.ProductName)
 		si := metrics.AllScoresImproved(recs, c.Input.CurrentScore, 1.0)
 		co := metrics.CountEqualsThree(recs)

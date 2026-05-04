@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -52,13 +53,16 @@ func EvaluateGates(report *Report, baselinePath string) []string {
 	var failures []string
 
 	base := baselineFile{Agents: map[string]map[string]float64{}}
-	if b, err := os.ReadFile(baselinePath); err == nil {
-		if err := json.Unmarshal(b, &base); err != nil {
-			failures = append(failures, fmt.Sprintf("baseline %s could not be parsed: %v", baselinePath, err))
+	if b, err := os.ReadFile(baselinePath); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			failures = append(failures, fmt.Sprintf("baseline %s could not be read: %v", baselinePath, err))
 			return failures
 		}
+		// File not found → no tripwire gating, only floor gating.
+	} else if err := json.Unmarshal(b, &base); err != nil {
+		failures = append(failures, fmt.Sprintf("baseline %s could not be parsed: %v", baselinePath, err))
+		return failures
 	}
-	// Missing baseline → no tripwire gating, only floor gating.
 
 	for agent, rules := range gateRules {
 		observed := report.Agents[agent]
@@ -89,11 +93,11 @@ func EvaluateGates(report *Report, baselinePath string) []string {
 				delta := v - baseVal
 				if rule.HigherIsWorse {
 					if delta > rule.TripwireDeltaP {
-						failures = append(failures, fmt.Sprintf("%s.%s rose by %.4f (>%.2fpp tripwire); base=%.4f new=%.4f", agent, metric, delta, rule.TripwireDeltaP, baseVal, v))
+						failures = append(failures, fmt.Sprintf("%s.%s rose by %.4f (>%.0fpp tripwire); base=%.4f new=%.4f", agent, metric, delta, rule.TripwireDeltaP*100, baseVal, v))
 					}
 				} else {
 					if -delta > rule.TripwireDeltaP {
-						failures = append(failures, fmt.Sprintf("%s.%s dropped by %.4f (>%.2fpp tripwire); base=%.4f new=%.4f", agent, metric, math.Abs(delta), rule.TripwireDeltaP, baseVal, v))
+						failures = append(failures, fmt.Sprintf("%s.%s dropped by %.4f (>%.0fpp tripwire); base=%.4f new=%.4f", agent, metric, math.Abs(delta), rule.TripwireDeltaP*100, baseVal, v))
 					}
 				}
 			}
