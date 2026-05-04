@@ -38,6 +38,12 @@ func TestDistinctFromInput(t *testing.T) {
 			want:  true,
 		},
 		{
+			name:  "nil recs",
+			recs:  nil,
+			input: "anything",
+			want:  true,
+		},
+		{
 			name: "whitespace-insensitive",
 			recs: []Recommendation{
 				{Name: "  Original Cereal  ", Score: 0},
@@ -97,12 +103,28 @@ func TestAllScoresImproved(t *testing.T) {
 			want:       false,
 		},
 		{
+			name:       "nil recs",
+			recs:       nil,
+			inputScore: 5.0,
+			minDelta:   1.0,
+			want:       false,
+		},
+		{
 			name: "exact boundary passes",
 			recs: []Recommendation{
 				{Name: "A", Score: 7.0},
 			},
 			inputScore: 6.0,
 			minDelta:   1.0,
+			want:       true,
+		},
+		{
+			name: "negative delta allows lower threshold",
+			recs: []Recommendation{
+				{Name: "A", Score: 4.5},
+			},
+			inputScore: 6.0,
+			minDelta:   -2.0,
 			want:       true,
 		},
 	}
@@ -158,6 +180,11 @@ func TestCountEqualsThree(t *testing.T) {
 		{
 			name: "zero",
 			recs: []Recommendation{},
+			want: false,
+		},
+		{
+			name: "nil",
+			recs: nil,
 			want: false,
 		},
 	}

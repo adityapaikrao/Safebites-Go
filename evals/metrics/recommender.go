@@ -21,8 +21,9 @@ func DistinctFromInput(recs []Recommendation, input string) bool {
 	return true
 }
 
-// AllScoresImproved returns true iff every recommendation's score is at
-// least inputScore+minDelta. Empty recs → false.
+// AllScoresImproved returns true iff every recommendation's score is >=
+// inputScore+minDelta (boundary inclusive). Empty recs → false.
+// minDelta may be negative to check scores above a lower threshold.
 func AllScoresImproved(recs []Recommendation, inputScore, minDelta float64) bool {
 	if len(recs) == 0 {
 		return false
@@ -36,6 +37,7 @@ func AllScoresImproved(recs []Recommendation, inputScore, minDelta float64) bool
 }
 
 // CountEqualsThree returns true iff exactly three recommendations were returned.
+// Three is the fixed product invariant for recommendations.
 func CountEqualsThree(recs []Recommendation) bool {
 	return len(recs) == 3
 }
