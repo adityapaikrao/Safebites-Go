@@ -85,6 +85,13 @@ func TestIngredientRecallAndPrecision(t *testing.T) {
 			wantRecall:     1.0,
 			wantPrecision:  0.5,
 		},
+		{
+			name:           "whitespace-only token in expected is skipped",
+			got:            []string{"sugar"},
+			expected:       []string{"sugar", "  "},
+			wantRecall:     1.0,
+			wantPrecision:  1.0,
+		},
 	}
 
 	for _, tt := range tests {
