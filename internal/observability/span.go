@@ -49,6 +49,12 @@ func (s AgentSpan) SetTokens(input, output int64) {
 }
 
 func tracer() trace.Tracer {
+	providerMu.RLock()
+	tp := currentProvider
+	providerMu.RUnlock()
+	if tp != nil {
+		return tp.Tracer(tracerName)
+	}
 	return otel.Tracer(tracerName)
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -74,4 +75,31 @@ func TestStartPipelineSpan_SetsTraceName(t *testing.T) {
 	if spans[0].Name() != "analyze" {
 		t.Errorf("span name = %q, want analyze", spans[0].Name())
 	}
+}
+
+func TestStartAgentSpan_UsesConfiguredProviderWhenGlobalProviderChanges(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	observability.SetTracerProvider(tp)
+	t.Cleanup(func() { observability.SetTracerProvider(nil) })
+
+	otel.SetTracerProvider(sdktrace.NewTracerProvider())
+
+	_, span := observability.StartAgentSpan(context.Background(), "SearchAgent")
+	span.End()
+
+	spans := rec.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("expected span to use configured provider, got %d recorded spans", len(spans))
+	}
+	if spans[0].Name() != "SearchAgent" {
+		t.Errorf("span name = %q, want SearchAgent", spans[0].Name())
+	}
+}
+
+func TestStartAgentSpan_NoopsWhenConfiguredProviderCleared(t *testing.T) {
+	observability.SetTracerProvider(nil)
+
+	_, span := observability.StartAgentSpan(context.Background(), "SearchAgent")
+	span.End()
 }
