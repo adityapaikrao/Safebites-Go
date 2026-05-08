@@ -139,6 +139,21 @@ make test          # All 95 tests with race detection
 make test-cover    # Generate HTML coverage report
 ```
 
+### Evals
+
+```bash
+make eval
+make eval-update-baseline
+```
+
+`make eval` runs `go run ./cmd/eval --agent=all` with gate checks enabled. `make eval-update-baseline` runs the same suite and writes `evals/baselines/main.json`.
+
+Local golden inputs are required under `evals/golden/*` for eval runs to be meaningful. Golden datasets and baseline seeding are intentionally deferred pending source-of-truth curation.
+
+CI runs `.github/workflows/agent-evals.yml` on PRs that touch `internal/agent/**`, `internal/config/**`, `internal/observability/**`, `evals/**`, `cmd/eval/**`, or the workflow itself. If golden datasets are missing, CI posts a clear PR comment and skips failing the PR; if evals run and gate checks fail, CI fails the job.
+
+Tracing in eval/server runs is optional and uses the same Langfuse env vars: `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and `LANGFUSE_BASE_URL`.
+
 ### Docker (Full Stack)
 
 ```bash
@@ -155,6 +170,8 @@ make docker-down   # Tear down
 | `make test` | Run all tests (`-race -count=1`) |
 | `make test-cover` | Tests with HTML coverage report |
 | `make lint` | Run `golangci-lint` |
+| `make eval` | Run agent evals (`go run ./cmd/eval --agent=all`) |
+| `make eval-update-baseline` | Run evals and update baseline JSON |
 | `make migrate-up` | Apply pending migrations |
 | `make migrate-down` | Rollback one migration |
 | `make docker-up` | Full Docker Compose stack |

@@ -11,7 +11,8 @@
 7. [Go Patterns Used](#go-patterns-used)
 8. [Python-to-Go Migration](#python-to-go-migration)
 9. [Testing Strategy](#testing-strategy)
-10. [Future Additions](#future-additions)
+10. [Observability & Evals](#observability--evals)
+11. [Future Additions](#future-additions)
 
 ---
 
@@ -389,6 +390,31 @@ Key differences in the Go version:
 - LLM output resilience (code-fenced JSON, mixed string/number types)
 - Middleware behavior (dev-mode auth bypass, CORS header verification, request logging skip conditions)
 - Orchestrator control flow (early stopping when score improves, max iteration limits, high initial score bypass)
+
+---
+
+## Observability & Evals
+
+### Tracing Behavior and Levels
+
+SafeBites tracing is opt-in. `internal/observability.InitTracer` enables OTLP export to Langfuse only when both `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set. If either key is missing (or the base URL is invalid), startup logs a clear message and tracing falls back to a no-op shutdown path, so app/eval execution continues without telemetry side effects.
+
+When tracing is enabled, the stack records:
+- Pipeline-level spans (for end-to-end operations like analysis flows)
+- Agent-level spans (Vision, Search, Scorer, Recommender invocations)
+- GenAI attributes (input/output metadata and token counts where available)
+
+### Eval Gating Architecture
+
+The `cmd/eval` runner executes agent evals (`--agent=all` by default), prints a markdown summary table, and applies gate rules in `cmd/eval/gates.go`:
+- Hard floors for critical metrics (for example `json_valid`, `allergy_respect_rate`)
+- Baseline tripwire deltas for regression detection when `evals/baselines/main.json` is present
+
+In CI, `.github/workflows/agent-evals.yml` is scoped to eval/agent-related PR paths. The workflow captures eval output, comments results on the PR, and enforces gate failures when evals execute successfully. When golden datasets are absent, CI reports that state explicitly and skips blocking the PR.
+
+### Dataset and Baseline Seeding Status
+
+Golden dataset and baseline seeding are intentionally deferred pending source-of-truth input curation. Source-of-truth input curation must complete before committing full `evals/golden/*` cases and generating `evals/baselines/main.json`.
 
 ---
 
