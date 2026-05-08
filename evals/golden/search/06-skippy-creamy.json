@@ -1,0 +1,5 @@
+{
+  "id": "search-skippy-creamy",
+  "input": { "product_name": "Skippy Creamy Peanut Butter" },
+  "expected": { "ingredients": ["TODO_SOURCE_OF_TRUTH_INGREDIENT_1"] }
+}

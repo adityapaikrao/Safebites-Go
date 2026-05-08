@@ -1,0 +1,21 @@
+{
+  "id": "scorer-vegan-goal-template",
+  "input": {
+    "ingredients": [
+      { "name": "Milk Powder", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" },
+      { "name": "Oats", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" }
+    ],
+    "prefs": {
+      "allergies": [],
+      "diet_goals": ["vegan"],
+      "avoid_ingredients": []
+    }
+  },
+  "expected": {
+    "ingredient_directions": {
+      "Milk Powder": "bad",
+      "Oats": "good"
+    },
+    "overall_score_range": [0.0, 0.0]
+  }
+}

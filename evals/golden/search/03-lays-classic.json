@@ -1,0 +1,5 @@
+{
+  "id": "search-lays-classic",
+  "input": { "product_name": "Lay's Classic Potato Chips" },
+  "expected": { "ingredients": ["TODO_SOURCE_OF_TRUTH_INGREDIENT_1"] }
+}

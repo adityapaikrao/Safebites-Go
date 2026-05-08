@@ -1,0 +1,5 @@
+{
+  "id": "recommender-ice-cream-template",
+  "input": { "product_name": "Ben & Jerry's Cherry Garcia", "current_score": 4.0 },
+  "expected": {}
+}

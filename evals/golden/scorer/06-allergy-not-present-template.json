@@ -1,0 +1,21 @@
+{
+  "id": "scorer-allergy-not-present-template",
+  "input": {
+    "ingredients": [
+      { "name": "Rice Flour", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" },
+      { "name": "Salt", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" }
+    ],
+    "prefs": {
+      "allergies": ["peanut"],
+      "diet_goals": [],
+      "avoid_ingredients": []
+    }
+  },
+  "expected": {
+    "ingredient_directions": {
+      "Rice Flour": "neutral",
+      "Salt": "neutral"
+    },
+    "overall_score_range": [0.0, 0.0]
+  }
+}

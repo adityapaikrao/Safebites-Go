@@ -1,0 +1,5 @@
+{
+  "id": "recommender-cookie-template",
+  "input": { "product_name": "Oreo Original", "current_score": 4.0 },
+  "expected": {}
+}

@@ -1,0 +1,5 @@
+{
+  "id": "recommender-sugary-cereal-template",
+  "input": { "product_name": "Lucky Charms Original", "current_score": 4.0 },
+  "expected": {}
+}

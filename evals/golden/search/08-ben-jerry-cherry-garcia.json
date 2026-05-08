@@ -1,0 +1,5 @@
+{
+  "id": "search-ben-jerry-cherry-garcia",
+  "input": { "product_name": "Ben & Jerry's Cherry Garcia" },
+  "expected": { "ingredients": ["TODO_SOURCE_OF_TRUTH_INGREDIENT_1"] }
+}

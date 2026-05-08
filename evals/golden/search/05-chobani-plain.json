@@ -1,0 +1,5 @@
+{
+  "id": "search-chobani-plain",
+  "input": { "product_name": "Chobani Greek Yogurt Plain" },
+  "expected": { "ingredients": ["TODO_SOURCE_OF_TRUTH_INGREDIENT_1"] }
+}

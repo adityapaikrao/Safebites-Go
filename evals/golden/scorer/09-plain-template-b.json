@@ -1,0 +1,21 @@
+{
+  "id": "scorer-plain-template-b",
+  "input": {
+    "ingredients": [
+      { "name": "Tomato Paste", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" },
+      { "name": "Salt", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" }
+    ],
+    "prefs": {
+      "allergies": [],
+      "diet_goals": [],
+      "avoid_ingredients": []
+    }
+  },
+  "expected": {
+    "ingredient_directions": {
+      "Tomato Paste": "good",
+      "Salt": "neutral"
+    },
+    "overall_score_range": [0.0, 0.0]
+  }
+}

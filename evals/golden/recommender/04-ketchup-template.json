@@ -1,0 +1,5 @@
+{
+  "id": "recommender-ketchup-template",
+  "input": { "product_name": "Heinz Tomato Ketchup", "current_score": 6.0 },
+  "expected": {}
+}

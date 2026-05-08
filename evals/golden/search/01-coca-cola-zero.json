@@ -1,0 +1,9 @@
+{
+  "id": "search-coca-cola-zero",
+  "input": { "product_name": "Coca-Cola Zero Sugar" },
+  "expected": {
+    "ingredients": [
+      "TODO_SOURCE_OF_TRUTH_INGREDIENT_1"
+    ]
+  }
+}

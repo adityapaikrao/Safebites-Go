@@ -1,0 +1,21 @@
+{
+  "id": "scorer-low-sugar-template",
+  "input": {
+    "ingredients": [
+      { "name": "Sugar", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" },
+      { "name": "Whole Grain Oats", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" }
+    ],
+    "prefs": {
+      "allergies": [],
+      "diet_goals": ["low-sugar"],
+      "avoid_ingredients": []
+    }
+  },
+  "expected": {
+    "ingredient_directions": {
+      "Sugar": "bad",
+      "Whole Grain Oats": "good"
+    },
+    "overall_score_range": [0.0, 0.0]
+  }
+}

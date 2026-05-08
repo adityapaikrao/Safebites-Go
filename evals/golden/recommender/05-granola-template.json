@@ -1,0 +1,5 @@
+{
+  "id": "recommender-granola-template",
+  "input": { "product_name": "Nature Valley Protein Granola Oats and Honey", "current_score": 6.0 },
+  "expected": {}
+}

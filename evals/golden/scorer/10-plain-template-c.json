@@ -1,0 +1,21 @@
+{
+  "id": "scorer-plain-template-c",
+  "input": {
+    "ingredients": [
+      { "name": "Peanuts", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" },
+      { "name": "Palm Oil", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" }
+    ],
+    "prefs": {
+      "allergies": [],
+      "diet_goals": [],
+      "avoid_ingredients": []
+    }
+  },
+  "expected": {
+    "ingredient_directions": {
+      "Peanuts": "good",
+      "Palm Oil": "neutral"
+    },
+    "overall_score_range": [0.0, 0.0]
+  }
+}

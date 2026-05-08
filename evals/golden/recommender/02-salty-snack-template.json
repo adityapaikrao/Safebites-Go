@@ -1,0 +1,5 @@
+{
+  "id": "recommender-salty-snack-template",
+  "input": { "product_name": "Lay's Classic Potato Chips", "current_score": 5.0 },
+  "expected": {}
+}

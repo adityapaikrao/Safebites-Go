@@ -1,0 +1,5 @@
+{
+  "id": "recommender-mac-cheese-template",
+  "input": { "product_name": "Kraft Macaroni & Cheese", "current_score": 5.0 },
+  "expected": {}
+}

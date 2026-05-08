@@ -1,0 +1,5 @@
+{
+  "id": "recommender-soda-template",
+  "input": { "product_name": "Coca-Cola Zero Sugar", "current_score": 5.0 },
+  "expected": {}
+}

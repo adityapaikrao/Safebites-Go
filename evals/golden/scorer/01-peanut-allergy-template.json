@@ -1,0 +1,21 @@
+{
+  "id": "scorer-peanut-allergy-template",
+  "input": {
+    "ingredients": [
+      { "name": "Peanut Butter", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" },
+      { "name": "Whole Grain Oats", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" }
+    ],
+    "prefs": {
+      "allergies": ["peanut"],
+      "diet_goals": ["TODO_OPTIONAL_DIET_GOAL"],
+      "avoid_ingredients": []
+    }
+  },
+  "expected": {
+    "ingredient_directions": {
+      "Peanut Butter": "bad",
+      "Whole Grain Oats": "neutral"
+    },
+    "overall_score_range": [0.0, 0.0]
+  }
+}

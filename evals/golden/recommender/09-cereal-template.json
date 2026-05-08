@@ -1,0 +1,5 @@
+{
+  "id": "recommender-cereal-template",
+  "input": { "product_name": "Cheerios Original", "current_score": 7.0 },
+  "expected": {}
+}

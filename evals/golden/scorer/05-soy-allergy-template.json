@@ -1,0 +1,21 @@
+{
+  "id": "scorer-soy-allergy-template",
+  "input": {
+    "ingredients": [
+      { "name": "Soy Lecithin", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" },
+      { "name": "Sugar", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" }
+    ],
+    "prefs": {
+      "allergies": ["soy"],
+      "diet_goals": [],
+      "avoid_ingredients": []
+    }
+  },
+  "expected": {
+    "ingredient_directions": {
+      "Soy Lecithin": "bad",
+      "Sugar": "bad"
+    },
+    "overall_score_range": [0.0, 0.0]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "search-cheerios",
+  "input": { "product_name": "Cheerios Original" },
+  "expected": {
+    "ingredients": [
+      "TODO_SOURCE_OF_TRUTH_INGREDIENT_1"
+    ]
+  }
+}

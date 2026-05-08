@@ -1,0 +1,21 @@
+{
+  "id": "scorer-gluten-allergy-template",
+  "input": {
+    "ingredients": [
+      { "name": "Wheat Flour", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" },
+      { "name": "Salt", "description": "TODO_SOURCE_OF_TRUTH_DESCRIPTION" }
+    ],
+    "prefs": {
+      "allergies": ["wheat"],
+      "diet_goals": [],
+      "avoid_ingredients": []
+    }
+  },
+  "expected": {
+    "ingredient_directions": {
+      "Wheat Flour": "bad",
+      "Salt": "neutral"
+    },
+    "overall_score_range": [0.0, 0.0]
+  }
+}

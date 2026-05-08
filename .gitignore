@@ -8,8 +8,11 @@
 # Go build
 bin/
 .gocache/
+.gomodcache/
+server
 
 # Working specs/plans (kept locally, not versioned)
+.claude/
 docs/superpowers/
 
 # test images

@@ -1,0 +1,5 @@
+{
+  "id": "recommender-peanut-butter-template",
+  "input": { "product_name": "Skippy Creamy Peanut Butter", "current_score": 6.0 },
+  "expected": {}
+}

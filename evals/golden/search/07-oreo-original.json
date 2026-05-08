@@ -1,0 +1,5 @@
+{
+  "id": "search-oreo-original",
+  "input": { "product_name": "Oreo Original" },
+  "expected": { "ingredients": ["TODO_SOURCE_OF_TRUTH_INGREDIENT_1"] }
+}
