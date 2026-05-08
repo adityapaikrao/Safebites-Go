@@ -1,0 +1,121 @@
+name: Agent Evals
+
+on:
+  pull_request:
+    paths:
+      - "internal/agent/**"
+      - "internal/config/**"
+      - "internal/model/**"
+      - "internal/observability/**"
+      - "evals/**"
+      - "cmd/eval/**"
+      - ".github/workflows/agent-evals.yml"
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+      LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run evals
+        id: evals
+        shell: bash
+        run: |
+          set +e
+
+          export DATABASE_URL="${DATABASE_URL:-postgres://placeholder:placeholder@localhost:5432/placeholder?sslmode=disable}"
+          export GOOGLE_API_KEY="${GOOGLE_API_KEY:-placeholder-key}"
+
+          output="$(go run ./cmd/eval --agent=all 2>&1)"
+          status=$?
+
+          printf '%s\n' "$output"
+
+          max_output_chars=50000
+          if [ "${#output}" -gt "$max_output_chars" ]; then
+            output_for_step="${output:0:$max_output_chars}"
+            output_for_step="${output_for_step}\n...[truncated before writing to GITHUB_OUTPUT]"
+          else
+            output_for_step="$output"
+          fi
+
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "output<<EOF" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$output_for_step" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          if [ "$status" -eq 0 ]; then
+            echo "result=passed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if printf '%s' "$output" | grep -Eiq '(evals/golden|golden).*(no such file|not found|cannot find|does not exist|not a directory)|read dir .*golden'; then
+            echo "::notice::Golden eval datasets are not present; skipping eval gate."
+            echo "result=skipped_missing_golden" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "result=failed" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Comment eval output on PR
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          EVAL_RESULT: ${{ steps.evals.outputs.result }}
+          EVAL_STATUS: ${{ steps.evals.outputs.status }}
+          EVAL_OUTPUT: ${{ steps.evals.outputs.output }}
+        with:
+          script: |
+            const result = process.env.EVAL_RESULT || "unknown";
+            const status = process.env.EVAL_STATUS || "unknown";
+            const rawOutput = (process.env.EVAL_OUTPUT || "").trim();
+            const output = rawOutput.length > 60000
+              ? `${rawOutput.slice(0, 60000)}\n...[truncated]`
+              : rawOutput;
+
+            const labels = {
+              passed: "Passed",
+              skipped_missing_golden: "Skipped (missing golden datasets)",
+              failed: "Failed",
+              unknown: "Unknown",
+            };
+
+            const body = [
+              "## Agent evals",
+              "",
+              `Result: **${labels[result] || result}**`,
+              `Exit status: \`${status}\``,
+              "",
+              "```text",
+              output || "(no output)",
+              "```",
+            ].join("\n");
+
+            try {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body,
+              });
+            } catch (error) {
+              core.warning(`Unable to post PR comment (likely fork or read-only token): ${error.message}`);
+            }

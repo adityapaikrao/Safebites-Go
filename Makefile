@@ -5,7 +5,7 @@ BINARY   := bin/server
 CMD      := ./cmd/server
 DATABASE_URL ?= postgres://safebites:safebites@localhost:5432/safebites?sslmode=disable
 
-.PHONY: build run test test-cover lint migrate-up migrate-down migrate-create \
+.PHONY: build run test test-cover lint eval eval-update-baseline migrate-up migrate-down migrate-create \
         docker-build docker-up docker-down deps tidy
 
 ## ── Build ───────────────────────────────────────────────────────────────────
@@ -31,6 +31,14 @@ test-cover:
 
 lint:
 	golangci-lint run ./...
+
+## ── Agent Evals ───────────────────────────────────────────────────────────
+
+eval:
+	go run ./cmd/eval --agent=all
+
+eval-update-baseline:
+	go run ./cmd/eval --agent=all --update-baseline
 
 ## ── Database Migrations ─────────────────────────────────────────────────────
 
